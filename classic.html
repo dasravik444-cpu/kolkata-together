@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Kolkata Together Classic</title>
+  <meta name="theme-color" content="#1d1a24">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="hud-left">
+      <div id="hud-money" class="chip">₹0</div>
+      <div id="hud-bank" class="chip small">Bank ₹0</div>
+      <div id="hud-bars"><div class="bar"><span>❤</span><i id="bar-health"></i></div><div class="bar"><span>🍽</span><i id="bar-hunger"></i></div></div>
+      <div id="hud-weapon" class="chip small hidden"></div>
+    </div>
+    <div id="hud-right">
+      <div id="hud-clock" class="chip">10:00</div>
+      <div id="hud-wanted"></div>
+      <div id="hud-net" class="chip small">offline</div>
+    </div>
+    <div id="banner" class="hidden"></div>
+    <div id="prompt" class="hidden"></div>
+    <div id="bigtext" class="hidden"></div>
+    <div id="toasts"></div>
+    <div id="hud-buttons">
+      <button id="btn-phone" title="Phone (P)">📱</button>
+      <button id="btn-chat" title="Chat (T)">💬<b id="chat-badge" class="hidden">!</b></button>
+      <button id="btn-call" title="Voice call (V)">📞</button>
+      <button id="btn-camera" title="Selfie (C)">📷</button>
+      <button id="btn-help" title="Controls (H)">❔</button>
+    </div>
+  </div>
+
+  <!-- dialogue box -->
+  <div id="dialog" class="hidden"><div id="dialog-name"></div><div id="dialog-text"></div><div id="dialog-next">▼</div></div>
+
+  <!-- chat -->
+  <div id="chat" class="panel hidden">
+    <div class="panel-head">Chat with <span id="chat-partner">partner</span><button class="x" data-close="chat">✕</button></div>
+    <div id="chat-log"></div>
+    <form id="chat-form"><input id="chat-input" maxlength="300" autocomplete="off" placeholder="Type a message…"><button>Send</button></form>
+  </div>
+
+  <!-- call bar -->
+  <div id="callbar" class="hidden"><span id="call-state">Calling…</span><button id="call-accept" class="hidden">Accept</button><button id="call-mute">Mute</button><button id="call-end" class="danger">Hang up</button></div>
+
+  <!-- generic modal (shops, phone apps, bank, menus …) -->
+  <div id="modal" class="hidden"><div id="modal-box"></div></div>
+
+  <!-- lobby -->
+  <div id="lobby">
+    <div class="lobby-card">
+      <h1>Kolkata <span>Together</span></h1>
+      <p class="sub">A two-player open-city adventure through central Kolkata</p>
+      <div class="lobby-grid">
+        <div>
+          <label>Your name</label><input id="lob-name" maxlength="16" placeholder="Name">
+          <label>Choose your character</label>
+          <div id="lob-chars"></div>
+          <label>Secret game code <small>(you and your partner type the same code)</small></label>
+          <input id="lob-code" maxlength="40" placeholder="e.g. our-secret-adda-2026">
+          <div class="lobby-actions"><button id="lob-online" class="primary">Play online together</button><button id="lob-solo">Explore solo</button></div>
+          <p class="hint">Only two players can join a code. Keep it private.</p>
+        </div>
+        <div id="lob-preview"><canvas id="lob-portrait" width="96" height="144"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- touch controls -->
+  <div id="touch" class="hidden">
+    <div id="stick"><div id="knob"></div></div>
+    <div id="tbtns"><button data-k="e">E</button><button data-k="f">F</button><button data-k="space">⚡</button><button data-k="shift">Run</button></div>
+  </div>
+
+  <script src="vendor/peerjs.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

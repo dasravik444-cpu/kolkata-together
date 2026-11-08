@@ -5,6 +5,8 @@ import { TL, ROADS, WATERY, CAR_TYPES, carSprite, animalSprite, ANIMALS, moneySp
 import { NPC_LINES } from './data.js';
 
 export const DIRS = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
+// Speed scales: the 3D version runs the same simulation at real-world walking speeds.
+export const SIM = { ped: 1, animal: 1 };
 const DIR_ROW = { down: 0, up: 1, left: 2, right: 3 };
 
 /* ------------------------- collision helpers ------------------------- */
@@ -63,7 +65,7 @@ export class NPC {
     this.look = o.look === 'police' ? uniformLook('police') : o.look || randomLook(this.seed);
     this.dir = o.dir || 'down'; this.role = o.role || 'ped'; this.line = o.line || pick(Math.random, NPC_LINES);
     this.name = o.name; this.wander = o.wander ?? true; this.state = 'idle'; this.timer = Math.random() * 2; this.moving = false;
-    this.speed = 28 + Math.random() * 14; this.cash = 50 + Math.floor(Math.random() * 1500); this.home = { x, y };
+    this.speed = (28 + Math.random() * 14) * SIM.ped; this.cash = 50 + Math.floor(Math.random() * 1500); this.home = { x, y };
     this.static = !this.wander;
     if (this.role === 'dancer') this.state = 'dance';
   }
@@ -76,7 +78,7 @@ export class NPC {
     if (this.state === 'talk') { this.moving = false; if (this.timer <= 0) this.state = 'idle'; return; }
     if (this.state === 'flee') {
       const p = G.me; const ang = Math.atan2(this.y - p.y, this.x - p.x);
-      const dx = Math.cos(ang) * 75 * dt, dy = Math.sin(ang) * 75 * dt;
+      const dx = Math.cos(ang) * 75 * SIM.ped * dt, dy = Math.sin(ang) * 75 * SIM.ped * dt;
       this.moving = true; this.running = true; this.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
       if (moveBody(this, S, dx, dy)) { this.vx = (Math.random() - 0.5) * 2; }
       if (this.timer <= 0) { this.state = 'idle'; this.running = false; }
@@ -99,7 +101,7 @@ export class NPC {
 }
 
 export class Police extends NPC {
-  constructor(x, y) { super(x, y, { look: 'police', role: 'police' }); this.speed = 62; this.cool = 0; this.wander = false; }
+  constructor(x, y) { super(x, y, { look: 'police', role: 'police' }); this.speed = 62 * Math.max(0.6, SIM.ped); this.cool = 0; this.wander = false; }
   update(dt, G) {
     if (this.state === 'ko') { this.timer -= dt; if (this.timer <= 0) this.state = 'chase'; return; }
     const p = G.me; this.cool -= dt;
@@ -123,11 +125,11 @@ export class Animal {
     const A = ANIMALS[this.kind]; this.timer -= dt;
     const p = G.me;
     if (this.kind === 'crow' && dist(this.x, this.y, p.x, p.y) < 30 && !this.flyT) { this.flyT = 2.5; this.dx = (this.x - p.x) > 0 ? 1 : -1; this.dy = -0.7; }
-    if (this.flyT) { this.flyT -= dt; this.x += this.dx * 80 * dt; this.y += this.dy * 60 * dt; this.face = this.dx > 0 ? 1 : -1; if (this.flyT <= 0) { this.flyT = 0; this.dx = this.dy = 0; } return; }
+    if (this.flyT) { this.flyT -= dt; this.x += this.dx * 80 * SIM.animal * dt; this.y += this.dy * 60 * SIM.animal * dt; this.face = this.dx > 0 ? 1 : -1; if (this.flyT <= 0) { this.flyT = 0; this.dx = this.dy = 0; } return; }
     if ((this.kind === 'dog' || this.kind === 'dog2') && dist(this.x, this.y, p.x, p.y) < 70 && dist(this.x, this.y, p.x, p.y) > 20 && Math.random() < 0.6) { const a = Math.atan2(p.y - this.y, p.x - this.x); this.dx = Math.cos(a); this.dy = Math.sin(a); this.timer = 0.5; }
     if (this.timer <= 0) { this.timer = 1 + Math.random() * 4; if (Math.random() < 0.45) { this.dx = this.dy = 0; } else { const a = Math.random() * Math.PI * 2; this.dx = Math.cos(a); this.dy = Math.sin(a); } }
     if (this.dx || this.dy) {
-      const sp = A.speed * dt; const nx = this.x + this.dx * sp, ny = this.y + this.dy * sp;
+      const sp = A.speed * SIM.animal * dt; const nx = this.x + this.dx * sp, ny = this.y + this.dy * sp;
       const b = this.bounds;
       if (b && (nx < b.x0 || nx > b.x1 || ny < b.y0 || ny > b.y1)) { this.dx = -this.dx; this.dy = -this.dy; return; }
       if (!b && WATERY.has(tileAt(G.scene, nx, ny))) { this.dx = -this.dx; this.dy = -this.dy; return; }

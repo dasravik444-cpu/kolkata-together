@@ -1,6 +1,22 @@
 # Kolkata Together
 
-A private two-player open-city game set in central Kolkata. It runs in any modern browser, on laptops and phones.
+A private two-player **3D** open-city game set in central Kolkata, in the style of a third-person open-world crime game. It runs in any modern browser on laptops and phones. The original 2D pixel-art version is still available at `classic.html`.
+
+## The 3D version
+
+- **Engine:** real-time 3D (Three.js, vendored, so there's no CDN dependency).
+- **Lighting:** a sun and moon that move with the in-game clock, soft shadows, a physically based sky, fog and bloom.
+- **Night:** street lamps with light pools, glowing shop signs, and lit windows.
+- **Camera:** GTA-style third person. Click the game to look around with the mouse (scroll to zoom). On phones, drag anywhere to look and use the stick to move.
+- **City:** 3D Kolkata streets with lane markings, zebra crossings, raised kerbs, weathered colonial facades with green shutters and rooftop water tanks, and glass towers that reflect the sky.
+- **Landmarks:** 3D Victoria Memorial (dome and Angel of Victory), Shaheed Minar, St Paul's Cathedral, Eden Gardens, Fort William, the Maidan club tents, Birla Planetarium, New Market's clock tower and Vidyasagar Setu.
+- **People:** animated 3D people (walk, run, sit, swim, dance, hands-up). Both main characters are built from the reference photos, and every clothing, hair, makeup and glasses option shows in 3D.
+- **Vehicles and animals:** Ambassador taxis, buses, police cars, supercars, the Victoria horse carriage, and animals.
+- **Trial room:** the shop and salon trial room shows your 3D character live.
+- **Selfies:** real 3D photos of both of you, wherever you are.
+- **Graphics setting:** Low, Medium or High under Phone → Graphics. Phones default to Low.
+
+The cafe dining close-ups and the cinema, planetarium and TV shows are still the 2D illustrated scenes.
 
 Walk, drive and hang out around Park Street, the Maidan, Victoria Memorial, Exide Crossing, SSKM, Nandan, the malls, the zoo, Rabindra Sarovar and more. Eat at Flurys, Peter Cat, Mocambo, Trincas, Arsalan and Balaram Mullick. Shop and try on clothes, get a makeover, take selfies together, and text or voice-call each other in-game. GTA-style trouble is also in: stolen cars, mugging and bank heists, with the police coming after you.
 
@@ -17,7 +33,8 @@ Walk, drive and hang out around Park Street, the Maidan, Victoria Memorial, Exid
 
 | Key | Action |
 |---|---|
-| WASD / arrows | Move (hold **Shift** to run). Phones get an on-screen stick |
+| WASD / arrows | Move relative to the camera (hold **Shift** to run). Phones get an on-screen stick |
+| Mouse / drag | Look around (click the game first to capture the mouse; Esc releases it) · scroll to zoom |
 | **E** / Enter | Talk, enter buildings, sit, use things, stand up |
 | **F** | Get in/out of cars (steal or jack them) · threaten someone while holding a weapon |
 | **Space** | Attack / shoot / kick the football · horn while driving |
@@ -43,8 +60,8 @@ Walk, drive and hang out around Park Street, the Maidan, Victoria Memorial, Exid
 
 The game is plain static files with no build step and no server code. Multiplayer is **peer-to-peer over WebRTC** using [PeerJS](https://peerjs.com). The free public PeerJS service only introduces the two browsers to each other. After that, game data and voice flow directly between you, falling back to the PeerJS relay (TURN) servers when a direct link isn't possible.
 
-1. Push this folder to a GitHub repository (the repo root should contain `index.html`).
-2. Go to the repo's **Settings → Pages**. Under **Build and deployment**, choose **Deploy from a branch**, then select the branch you pushed and `/ (root)`.
+1. This repository is already set up: `index.html` is at the root of the `main` branch.
+2. Go to the repo's **Settings → Pages**. Under **Build and deployment**, choose **Deploy from a branch**, then select `main` and `/ (root)`, and press **Save**.
 3. After about a minute your game is at `https://<your-username>.github.io/<repo-name>/`. Send that link and your secret code to your partner.
 
 Other free static hosts (Netlify drop, Cloudflare Pages, Vercel) work the same way: upload the folder.
@@ -80,6 +97,8 @@ The two playable characters are based on the reference photos. He has brown skin
 
 | File | What it does |
 |---|---|
+| `index.html` + `js3d/` | The 3D version: `game3d.js` (game core), `render3d.js` (renderer, lighting, camera), `world3d.js` (3D city + interiors), `models.js` (people, vehicles, animals, trees), `textures.js` (procedural textures) |
+| `classic.html` | The original 2D pixel-art version |
 | `js/main.js` | Engine: loop, input, camera, rendering, lighting, gameplay, crime, cabs, multiplayer sync |
 | `js/mapgen.js` | The Kolkata map: roads and traffic graph, buildings, landmarks, zones |
 | `js/interiors.js` | All 37 interiors and their furniture art |

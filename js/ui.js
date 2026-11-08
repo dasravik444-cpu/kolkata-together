@@ -20,7 +20,7 @@ export function init(game, api) {
   const name = $('lob-name'), code = $('lob-code');
   name.value = load('name', ''); code.value = load('code', '');
   const chars = $('lob-chars');
-  const draw = () => { const c = $('lob-portrait').getContext('2d'); c.imageSmoothingEnabled = false; c.clearRect(0, 0, 96, 144); const prof = load('profile', null); c.drawImage(portrait(prof && prof.preset === preset ? prof.app : PRESETS[preset]), 0, 0); };
+  const draw = () => { if (API.preview3d) { const prof0 = load('profile', null); API.preview3d($('lob-portrait'), prof0 && prof0.preset === preset ? prof0.app : PRESETS[preset]); return; } const c = $('lob-portrait').getContext('2d'); c.imageSmoothingEnabled = false; c.clearRect(0, 0, 96, 144); const prof = load('profile', null); c.drawImage(portrait(prof && prof.preset === preset ? prof.app : PRESETS[preset]), 0, 0); };
   chars.innerHTML = '<button data-p="him">He (brown skin, glasses)</button><button data-p="her">She (fair, mustard kurta)</button>';
   const sel = () => { chars.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.p === preset)); draw(); };
   chars.onclick = (e) => { const b = e.target.closest('button'); if (b) { preset = b.dataset.p; sel(); } };
@@ -181,7 +181,7 @@ export function callState(s) {
 const APPS = [
   ['messages', '💬', 'Messages', '#3aa84a'], ['call', '📞', 'Call', '#2a8a3a'], ['cab', '🚕', 'Jatri Cab', '#f2c230'], ['reserve', '🍽', 'Reserve', '#e8603c'],
   ['map', '🗺', 'Map', '#2a6ac0'], ['bank', '🏦', 'Bank', '#2a4a8a'], ['camera', '📷', 'Camera', '#5a5a62'], ['gallery', '🖼', 'Gallery', '#8a3ab0'],
-  ['garage', '🏎', 'Garage', '#d42a2a'], ['tag', '🏃', 'Tag game', '#c0306a'], ['music', '🎵', 'Music', '#e05a8a'], ['help', '❔', 'Help', '#6b6676'],
+  ['garage', '🏎', 'Garage', '#d42a2a'], ['tag', '🏃', 'Tag game', '#c0306a'], ['music', '🎵', 'Music', '#e05a8a'], ['help', '❔', 'Help', '#6b6676'], ['settings', '⚙', 'Graphics', '#3a3a48'],
 ];
 export function phone(app) {
   const h = Math.floor(G.time / 60), m = Math.floor(G.time % 60);
@@ -202,6 +202,13 @@ export function phone(app) {
     case 'call': closeModal(); toggleCall(); break;
     case 'camera': closeModal(); selfie(); break;
     case 'help': closeModal(); help(); break;
+    case 'settings': {
+      if (!API.setQuality) { toast('Graphics settings are for the 3D version.'); break; }
+      const cur = load('quality', 'auto');
+      screen('⚙ Graphics', `<p class="note">Higher quality = sharper shadows, bloom and more detailed people. Use Low on phones if it stutters.</p>${['low', 'medium', 'high'].map((q) => `<div class="dest"><span><b>${q[0].toUpperCase() + q.slice(1)}</b><br><small class="note">${{ low: 'Fast — no shadows, fewer details', medium: 'Shadows + bloom', high: 'Best looking — strong PC / laptop' }[q]}</small></span>${cur === q ? '<b>Current ✓</b>' : `<button data-q="${q}">Use</button>`}</div>`).join('')}<p class="note">The game reloads to apply (your progress is saved).</p>`);
+      $('modal-box').querySelectorAll('[data-q]').forEach((b) => (b.onclick = () => API.setQuality(b.dataset.q)));
+      break;
+    }
     case 'music': { const on = toggleMusic(); toast(on ? '🎵 Music on' : '🎵 Music off'); break; }
     case 'cab': {
       const me = G.me;
@@ -299,7 +306,7 @@ export function help() {
 /* ============================== shops / wardrobe / salon ============================== */
 const SLOT_NAMES = { top: 'Tops & outfits', bottom: 'Bottoms', shoes: 'Shoes', glasses: 'Glasses & sunglasses', hat: 'Hats', earrings: 'Earrings' };
 function previewHTML() { return '<div class="preview"><div class="floor"></div><canvas id="pv" width="96" height="144" style="position:relative"></canvas></div>'; }
-function drawPreview(app) { const c = $('pv'); if (!c) return; const g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.clearRect(0, 0, 96, 144); g.drawImage(portrait(app), 0, 0); }
+function drawPreview(app) { const c = $('pv'); if (!c) return; if (API.preview3d) { API.preview3d(c, app); return; } const g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.clearRect(0, 0, 96, 144); g.drawImage(portrait(app), 0, 0); }
 const swatch = (it) => `<div class="sw">${(it.c.length ? it.c : ['#eee']).filter((x) => x !== 'clear').map((c) => `<i style="background:${c}"></i>`).join('')}</div>`;
 
 export function shop(shopKey, wardrobeMode = false) {
@@ -426,7 +433,13 @@ export function selfie() {
   const now = new Date(); const stamp = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
   sfx.camera();
   modal(head('📷 Selfie', people.length > 1 ? 'Say "rosogolla"!' : 'Stand next to your partner for a couple selfie') + `<div class="m-body"><div class="scene-wrap"><canvas id="sf" width="${SW}" height="${SH}"></canvas></div></div><div class="m-foot"><button id="sf-save" class="primary">💾 Save to device</button><button id="sf-send">💌 Send to partner</button><button id="sf-keep">🖼 Keep in gallery</button><button data-x>Close</button></div>`);
-  const c = $('sf'); selfieScene(c, { place: placeFor(), people, label, stamp, night: API.darkness() > 0.3 });
+  const c = $('sf');
+  if (API.selfie3d) {
+    const shot = API.selfie3d(people); c.width = shot.width; c.height = shot.height; const g = c.getContext('2d'); g.drawImage(shot, 0, 0);
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, 0, c.width, 44); g.fillRect(0, c.height - 40, c.width, 40);
+    g.fillStyle = '#fff'; g.font = '600 24px "Pixelify Sans", sans-serif'; g.fillText(label, 16, 30); g.fillStyle = '#ffd94a'; g.textAlign = 'right'; g.fillText(stamp, c.width - 16, 30); g.textAlign = 'left';
+    g.strokeStyle = '#fff'; g.lineWidth = 4; g.beginPath(); g.arc(c.width / 2, c.height - 20, 12, 0, 7); g.stroke();
+  } else selfieScene(c, { place: placeFor(), people, label, stamp, night: API.darkness() > 0.3 });
   $('sf-save').onclick = () => download(c, label);
   $('sf-send').onclick = () => { sendChat('📷 ' + label, c.toDataURL('image/png')); toast('Photo sent 💌'); };
   $('sf-keep').onclick = () => { keep(c); toast('Saved to gallery'); };

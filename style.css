@@ -165,3 +165,13 @@ h3 { margin: 6px 0 4px; font-size: 16px; }
   #prompt { bottom: 200px; font-size: 14px; }
   #dialog { font-size: 16px; bottom: 200px; }
 }
+
+/* ---------- 3D version ---------- */
+canvas#game.three { image-rendering: auto; }
+#radar { position: fixed; left: 14px; bottom: 14px; width: 170px; height: 170px; z-index: 5; filter: drop-shadow(0 3px 6px rgba(0,0,0,.5)); pointer-events: none; }
+.tag { position: fixed; transform: translate(-50%, -100%); pointer-events: none; display: none; z-index: 4; white-space: nowrap; font-family: var(--font); }
+.tag.partner { background: rgba(29,26,36,.82); color: #ffd94a; border: 2px solid #ffd94a; border-radius: 8px; padding: 1px 8px; font-size: 15px; font-weight: 700; }
+.tag.speech { background: #fbfaf6; color: var(--ink); border: 2px solid var(--line); border-radius: 10px; padding: 3px 10px; font-size: 14px; max-width: 260px; white-space: normal; }
+#lob-portrait { width: 192px; height: 288px; image-rendering: auto; }
+.preview canvas { image-rendering: auto; }
+@media (max-width: 640px) { #radar { width: 120px; height: 120px; left: 10px; bottom: 190px; } }

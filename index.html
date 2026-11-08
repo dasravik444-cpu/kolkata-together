@@ -8,9 +8,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script type="importmap">{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }</script>
 </head>
 <body>
-  <canvas id="game"></canvas>
+  <canvas id="game" class="three"></canvas>
+  <canvas id="radar" width="200" height="200" class="hidden"></canvas>
+  <div id="ptag" class="tag partner"></div><div id="stag" class="tag speech"></div>
 
   <!-- HUD -->
   <div id="hud" class="hidden">
@@ -58,7 +61,7 @@
   <div id="lobby">
     <div class="lobby-card">
       <h1>Kolkata <span>Together</span></h1>
-      <p class="sub">A two-player open-city adventure through central Kolkata</p>
+      <p class="sub">A two-player 3D open-city adventure through central Kolkata</p>
       <div class="lobby-grid">
         <div>
           <label>Your name</label><input id="lob-name" maxlength="16" placeholder="Name">
@@ -67,7 +70,7 @@
           <label>Secret game code <small>(you and your partner type the same code)</small></label>
           <input id="lob-code" maxlength="40" placeholder="e.g. our-secret-adda-2026">
           <div class="lobby-actions"><button id="lob-online" class="primary">Play online together</button><button id="lob-solo">Explore solo</button></div>
-          <p class="hint">Only two players can join a code. Keep it private.</p>
+          <p class="hint">Only two players can join a code. Keep it private. · Click the game to look around with the mouse. · <a href="classic.html">Play the classic 2D version</a></p>
         </div>
         <div id="lob-preview"><canvas id="lob-portrait" width="96" height="144"></canvas></div>
       </div>
@@ -81,6 +84,6 @@
   </div>
 
   <script src="vendor/peerjs.min.js"></script>
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js3d/game3d.js"></script>
 </body>
 </html>
