@@ -193,10 +193,14 @@ function attack() {
   const me = G.me; if (me.attackCool > 0) return;
   const w = me.weapon;
   const [dx, dy] = FWD();
-  me.weaponOut = true; me.attackCool = w === 'pistol' ? 0.35 : 0.5;
-  if (w === 'pistol') {
+  const GUN = { pistol: [0.35, 1, 0.03], smg: [0.09, 1, 0.08], shotgun: [0.8, 6, 0.28], rifle: [0.5, 1, 0.01] }[w];
+  me.weaponOut = true; me.attackCool = GUN ? GUN[0] : 0.5;
+  if (GUN) {
     if (G.profile.ammo <= 0) { UI.toast('Out of ammo — buy more at Maidan Armoury.'); return; }
-    G.profile.ammo--; G.spawnBullet(me.x + dx * 8, me.y - 9 + dy * 4, Math.atan2(dy, dx), 'me'); UI.hud(); return;
+    G.profile.ammo--; const base = Math.atan2(dy, dx);
+    for (let k = 0; k < GUN[1]; k++) G.spawnBullet(me.x + dx * 8, me.y - 9 + dy * 4, base + (Math.random() - 0.5) * GUN[2], 'me');
+    playMe('shoot'); for (const n of G.npcs) if (n.state === 'idle' && dist(n.x, n.y, me.x, me.y) < 160) { n.state = 'flee'; n.timer = 4; }
+    UI.hud(); return;
   }
   sfx.hit();
   // melee: fist / knife / bat
@@ -220,6 +224,102 @@ function threaten(n) {
   G.crime(1);
 }
 const opposite = (d) => ({ up: 'down', down: 'up', left: 'right', right: 'left' }[d]);
+
+/* ---------- actions: slap / punch / kick / throw, partner fun, flying bodies ---------- */
+let animSeq = 0;
+function playMe(name) { G.me.anim = name + '#' + (++animSeq); sendState(true); }
+function playOn(ent, name) { ent.anim = name + '#' + (++animSeq); }
+function faceTo(ent) { G.me.angle = Math.atan2(ent.y - G.me.y, ent.x - G.me.x); G.me.dir = cardinal(G.me.angle); }
+// send something (person, animal, player) flying; z in metres, vx/vy in sim px/s
+function launch(e, vx, vy, vz, spin = 6) { e.fly = { z: e.fly ? e.fly.z : 0, vx, vy, vz, spin, rot: 0 }; }
+G.launch = launch;
+G.onAnimalHit = (a) => { const say = { cow: 'MOOOO! 🐄💫', dog: 'Woof?! 🐕💫', dog2: 'Yelp! 🐕💫', cat: 'MEEOWW! 🐈💫', goat: 'Meh-eh-eh! 🐐💫', horse: 'Neigh! 🐎💫', monkey: 'Ooh-ooh! 🐒💫' }[a.kind]; if (say) UI.toast(say); };
+const OUCH = ['Ouch! Ki korchen?!', 'Arre! What was that for?', 'Police! Police!', 'Baba go!', 'Are you mad?!', 'Uff! My jaw!'];
+function npcAction(kind, n) {
+  const me = G.me; faceTo(n); UI.closeDialog();
+  if (kind === 'talk') { n.state = 'talk'; n.timer = 4; n.dir = opposite(me.dir); G.talkAt = { x: n.x, y: n.y }; UI.dialog(n.name || 'Passer-by', n.line); return; }
+  if (kind === 'rob') return n.role === 'shopkeeper' ? robTill(n) : threaten(n);
+  playMe(kind);
+  const [fx, fy] = FWD();
+  setTimeout(() => {
+    if (!G.npcs.includes(n) && !G.police.includes(n)) return;
+    sfx.hit(); G.shake(kind === 'throw' ? 3 : 1);
+    if (kind === 'slap') { playOn(n, 'hit'); UI.say(n, pick(Math.random, OUCH)); n.state = 'flee'; n.timer = 4; G.crime(1); }
+    if (kind === 'punch') { n.state = 'ko'; n.timer = 3.5; launch(n, fx * 30, fy * 30, 1.2, 0); if (Math.random() < 0.5) dropCash(n); G.crime(1); }
+    if (kind === 'kick') { n.state = 'ko'; n.timer = 3.5; launch(n, fx * 70, fy * 70, 2.5, 3); G.crime(1); }
+    if (kind === 'throw') { n.state = 'ko'; n.timer = 4.5; launch(n, fx * 110, fy * 110, 6, 9); dropCash(n); G.crime(2); }
+    // some people fight back
+    if (kind !== 'throw' && n.role !== 'police' && Math.random() < 0.3) setTimeout(() => { if (n.state === 'ko') return; n.state = 'idle'; playOn(n, 'punch'); setTimeout(() => { if (dist(n.x, n.y, me.x, me.y) < 22) { playMe('hit'); G.profile.health -= 8; sfx.hit(); UI.toast('They hit you back! 🤕'); } }, 250); }, 900);
+  }, kind === 'throw' ? 550 : 220);
+}
+function robBank(n) {
+  const S = G.scene; G.me.weaponOut = true; faceTo(n); playMe('shoot');
+  for (const t of G.npcs) if (t.role === 'teller' || t.role === 'customer') { t.state = 'hands'; t.timer = 6; }
+  UI.say(n, 'Okay! Okay! Take it all — just don\'t shoot!'); sfx.siren();
+  setTimeout(() => { const loot = 40000 + Math.round(Math.random() * 80000); G.pickups.push(new Pickup(n.x, n.y + 18, loot)); UI.bigText('BANK ROBBERY!', `Grab the ${fmtMoney(loot)} bag — the alarm is ringing!`, 2600); G.crime(3); void S; }, 900);
+}
+function robTill(n) {
+  G.me.weaponOut = true; faceTo(n); n.state = 'hands'; n.timer = 5; playMe('shoot');
+  const jewel = G.scene.id.startsWith('mall') && Math.abs(n.x - 20 * 16) < 60;
+  UI.say(n, jewel ? 'Not the jewellery! Please!' : 'Take the cash, take it!');
+  setTimeout(() => { const loot = jewel ? 25000 + Math.round(Math.random() * 45000) : 6000 + Math.round(Math.random() * 14000); G.pickups.push(new Pickup(n.x, n.y + 16, loot)); G.crime(jewel ? 3 : 2); sfx.siren(); }, 700);
+}
+/* ---------- helicopters ---------- */
+function initHelis() {
+  G.helis = [[72, 72], [38, 163]].map(([tx, ty]) => ({ x: tx * T + 8, y: ty * T + 8, alt: 0, angle: -Math.PI / 2, speed: 0, rotor: 0, home: true }));
+}
+function roofAt(px, py) { const v = view; if (!v || !v.city) return 0; const tx = Math.floor(px / 16), ty = Math.floor(py / 16); if (tx < 0 || ty < 0 || tx >= G.world.W || ty >= G.world.H) return 0; return v.city.hgrid[ty * G.world.W + tx]; }
+function flyHeli(h, dt, ix, iy) {
+  const up = keys.has('space'), down = keys.has('shift');
+  h.rotor = Math.min(1, h.rotor + dt * 0.6);
+  if (h.rotor < 0.6) { UI.prompt('Rotor spinning up…', ''); return; }
+  const vs = (up ? 6 : 0) - (down ? 6 : 0); h.alt = Math.max(0, Math.min(140, h.alt + vs * dt));
+  const airborne = h.alt > 0.5;
+  const fwd = airborne ? -iy : 0; h.speed += ((fwd * 240) - h.speed) * Math.min(1, dt * 1.2);
+  if (airborne) h.angle += ix * 1.5 * dt;
+  const nx = h.x + Math.cos(h.angle) * h.speed * dt, ny = h.y + Math.sin(h.angle) * h.speed * dt;
+  const wall = roofAt(nx, ny);
+  if (nx < 20 || ny < 20 || nx > G.world.W * 16 - 20 || ny > G.world.H * 16 - 20) h.speed *= -0.3;
+  else if (wall > h.alt + 0.3) { h.speed *= -0.4; G.shake(4); sfx.hit(); }
+  else { h.x = nx; h.y = ny; }
+  const floor = roofAt(h.x, h.y); if (h.alt < floor) h.alt = floor;
+  h.tilt = (h.speed / 240) * 0.25; G.me.x = h.x; G.me.y = h.y;
+}
+function updateCopHeli(dt) {
+  if (G.wanted >= 4 && G.scene.kind === 'world') {
+    const c = G.copHeli || (G.copHeli = { x: G.me.x - 400, y: G.me.y - 400, alt: 35, angle: 0, speed: 0, rotor: 1, police: true, a: 0 });
+    c.a += dt * 0.5; const tx = G.me.x + Math.cos(c.a) * 110, ty = G.me.y + Math.sin(c.a) * 110;
+    const ang = Math.atan2(ty - c.y, tx - c.x); c.angle = ang; const d = dist(c.x, c.y, tx, ty); const sp = Math.min(300, d * 2);
+    c.x += Math.cos(ang) * sp * dt; c.y += Math.sin(ang) * sp * dt; c.tilt = Math.min(0.3, sp / 900);
+    if (!G._copHeliSaid) { G._copHeliSaid = true; UI.toast('🚁 Police helicopter overhead!'); sfx.siren(); }
+  } else if (G.copHeli) { G.copHeli.alt += dt * 15; if (G.copHeli.alt > 120) { G.copHeli = null; G._copHeliSaid = false; } }
+}
+function partnerAction(kind) {
+  const o = G.other; if (!o) return; faceTo(o);
+  if (kind === 'hifive') { playMe('wave'); G.net.send({ t: 'act', kind: 'hifive', a: G.me.angle }); UI.toast(`You hi-fived ${o.name}! ✋`); sfx.good(); return; }
+  if (kind === 'wave') { playMe('wave'); G.net.send({ t: 'act', kind: 'wave', a: G.me.angle }); return; }
+  playMe(kind === 'bonk' ? 'slap' : 'punch'); G.net.send({ t: 'act', kind, a: G.me.angle });
+  setTimeout(() => { sfx.hit(); UI.toast(kind === 'bonk' ? `🛏 You bonked ${o.name} with a pillow!` : `🤭 You playfully shoved ${o.name}!`); }, 260);
+}
+function onPartnerAct(m) {
+  const name = G.other ? G.other.name : 'Partner';
+  if (m.kind === 'hifive') { playMe('wave'); UI.toast(`${name} hi-fived you! ✋`); sfx.good(); }
+  if (m.kind === 'wave') UI.toast(`${name} waves at you 👋`);
+  if (m.kind === 'bonk') setTimeout(() => { playMe('hit'); sfx.hit(); UI.toast(`🛏 ${name} bonked you with a pillow!`); }, 260);
+  if (m.kind === 'shove') setTimeout(() => { playMe('hit'); launch(G.me, Math.cos(m.a) * 70, Math.sin(m.a) * 70, 2.5, 0); sfx.hit(); UI.toast(`🤭 ${name} shoved you — wheee!`); }, 260);
+}
+function updateFlying(dt) {
+  const S = G.scene;
+  const step = (e, isMe) => {
+    const f = e.fly; if (!f) return;
+    const nx = e.x + f.vx * dt, ny = e.y + f.vy * dt;
+    if (!blocked(S, nx, ny)) { e.x = nx; e.y = ny; } else { f.vx *= -0.3; f.vy *= -0.3; }
+    f.vz -= 9.8 * dt * 1.4; f.z += f.vz * dt; f.rot += f.spin * dt;
+    if (f.z <= 0 && f.vz < 0) { if (Math.abs(f.vz) > 4) { f.vz = -f.vz * 0.3; f.vx *= 0.5; f.vy *= 0.5; f.spin *= 0.4; f.z = 0.01; } else { e.fly = null; if (isMe) { G.me.state = 'walk'; } } }
+  };
+  for (const n of G.npcs) step(n); for (const p of G.police) step(p); if (S.kind === 'world') for (const a of G.animals) step(a);
+  step(G.me, true);
+}
 G.shake = (n) => { G.shakeT = Math.max(G.shakeT, n * 0.06); };
 
 /* ---------- football ---------- */
@@ -263,6 +363,13 @@ function populate(dt) {
       if (!G.cars.some((o) => dist(o.x, o.y, c.x, c.y) < 40)) G.cars.push(c);
     }
   }
+  // street animals wander onto the roads near you (Kolkata traffic!)
+  G.roadAnimT = (G.roadAnimT || 0) - dt;
+  if (G.roadAnimT <= 0) {
+    G.roadAnimT = 2; const near = G.animals.filter((a) => a.roadie && dist(a.x, a.y, me.x, me.y) < 520);
+    if (near.length < 7) { const s2 = walkableSpot(me.x, me.y, 260, 480, (t) => ROADS.has(t)); if (s2) { const a = new Animal(pick(Math.random, ['cow', 'cow', 'dog', 'dog2', 'cat', 'cat2']), s2.x, s2.y); a.roadie = true; G.animals.push(a); } }
+    G.animals = G.animals.filter((a) => !a.roadie || dist(a.x, a.y, me.x, me.y) < 900);
+  }
   // police cleanup
   G.police = G.police.filter((p) => !p.gone);
 }
@@ -274,7 +381,7 @@ function initAnimals() {
   add('cow', 10, [86, 100, 160, 211]); add('cow', 4, [20, 10, 85, 97]);
   add('dog', 14, [20, 1, 238, 210]); add('dog2', 10, [20, 1, 238, 210]);
   add('horse', 7, [60, 55, 85, 96]); add('horse', 3, [19, 140, 60, 175]);
-  add('goat', 5, [20, 60, 50, 97]); add('crow', 26, [20, 1, 238, 210]); add('monkey', 5, [19, 104, 70, 139]); add('monkey', 4, [50, 181, 60, 211]);
+  add('goat', 5, [20, 60, 50, 97]); add('cat', 12, [86, 1, 238, 210]); add('cat2', 10, [86, 1, 238, 210]); add('crow', 26, [20, 1, 238, 210]); add('monkey', 5, [19, 104, 70, 139]); add('monkey', 4, [50, 181, 60, 211]);
   add('deer', 4, [13, 181, 36, 193]); add('peacock', 4, [37, 193, 59, 197]);
   for (const p of W.pens) { const n = p.animal === 'elephant' || p.animal === 'rhino' || p.animal === 'hippo' ? 1 : 2; for (let i = 0; i < n; i++) A.push(new Animal(p.animal, (p.x0 + 2 + Math.random() * (p.x1 - p.x0 - 3)) * T, (p.y0 + 2 + Math.random() * (p.y1 - p.y0 - 3)) * T, { x0: (p.x0 + 1.5) * T, x1: (p.x1 - 0.5) * T, y0: (p.y0 + 1.8) * T, y1: (p.y1 - 0.2) * T })); }
   G.animals = A;
@@ -321,13 +428,19 @@ function doInteract(it) {
     case 'npc': {
       const n = it.npc; n.state = 'talk'; n.timer = 3; n.dir = opposite(G.me.dir);
       if (n.role === 'waiter' && S.menu) return UI.cafeMenu(S.menu, !!G.mySeat);
-      if (n.role === 'teller') return UI.bank(S.id.split(':')[1]);
+      if (n.role === 'teller') { if (!G.me.weapon) return UI.bank(S.id.split(':')[1]); return UI.actionMenu('Teller', [['bank', '🏦', 'Banking'], ['robbank', '💰', 'Rob the bank']], (k) => (k === 'bank' ? UI.bank(S.id.split(':')[1]) : robBank(n)), n); }
       if (n.role === 'stylist') return UI.salon();
       if (n.role === 'dealer' && S.id === 'armoury') return UI.weapons();
       if (n.role === 'cop' && S.id === 'police') return UI.policeDesk();
-      UI.dialog(n.name || (n.role === 'police' ? 'Police' : 'Passer-by'), n.line); break;
+      const who = n.name || (n.role === 'police' ? 'Police' : 'Passer-by');
+      const opts = [['talk', '💬', 'Talk'], ['slap', '👋', 'Slap'], ['punch', '👊', 'Punch'], ['kick', '🦵', 'Kick'], ['throw', '🤾', 'Throw']];
+      if (G.me.weapon) opts.push(['rob', '💰', 'Rob']);
+      UI.actionMenu(who, opts, (k) => npcAction(k, n), n); break;
     }
-    case 'partner': G.net.send({ t: 'event', kind: 'hifive' }); UI.toast(`You hi-fived ${G.other.name}! ✋`); sfx.good(); break;
+    case 'partner': {
+      const special = ['shove', '🤭', 'Playful shove'];
+      UI.actionMenu(G.other.name || 'Partner', [['hifive', '✋', 'Hi-five'], ['wave', '👋', 'Wave'], ['bonk', '🛏', 'Pillow bonk'], special], (k) => partnerAction(k), G.other); break;
+    }
     case 'door': enterBuilding(it.b); break;
     case 'exit': exitInterior(); break;
     case 'act': actOn(it.act); break;
@@ -399,11 +512,15 @@ function update(dt) {
     if (pressed.has('q')) cycleWeapon();
     if (pressed.has('g') && G.waypoint) { G.waypoint = null; UI.toast('Waypoint cleared'); }
   } else if (pressed.has('esc')) UI.closeTop();
-  if (UI.dialogOpen() && (pressed.has('e') || pressed.has('enter') || pressed.has('space'))) { UI.dialogNext(); pressed.clear(); }
+  if (UI.dialogOpen() && G.talkAt && dist(G.me.x, G.me.y, G.talkAt.x, G.talkAt.y) > 40) UI.closeDialog();
+  { const t = UI.actionMenuTarget(); if (t && (dist(G.me.x, G.me.y, t.x, t.y) > 36 || G.me.car)) UI.closeActionMenu(); }
 
   // ---- movement ----
-  if (!modal && !G.frozen && !UI.dialogOpen()) {
-    if (me.car) {
+  if (!modal && !G.frozen && !me.fly) {
+    if (me.heli) {
+      flyHeli(me.heli, dt, clamp(ix, -1, 1), clamp(iy, -1, 1));
+      if (pressed.has('f')) { if (me.heli.alt > 0.8) UI.toast('Land first! (hold Shift to descend)'); else { const h = me.heli; me.heli = null; h.rotor = 0; me.state = 'walk'; me.x = h.x + 30; me.y = h.y + 10; sfx.door(); sendState(true); } }
+    } else if (me.car) {
       const car = me.car;
       if (car.taxi && car.route !== null && !car.arrived) { car.aiUpdate(dt, G); me.x = car.x; me.y = car.y; if (car.arrived) UI.cabArrived(car); }
       else car.drive(dt, G, { up: iy < -0.3, down: iy > 0.3, left: ix < -0.3, right: ix > 0.3 });
@@ -448,9 +565,9 @@ function update(dt) {
         const [dx, dy] = FWD(); let n = null;
         if (me.weapon) for (const p of G.npcs) if (p.state !== 'ko' && p.role !== 'police' && dist(me.x + dx * 14, me.y + dy * 10, p.x, p.y) < 20) { n = p; break; }
         if (n) threaten(n);
-        else if (S.kind === 'world') { const c = nearestCar(); if (c) enterCar(c); }
+        else if (S.kind === 'world') { const h = G.helis.find((q) => dist(q.x, q.y, me.x, me.y) < 36 && q.alt < 1); if (h) { me.heli = h; me.state = 'drive'; h.rotor = 0; sfx.door(); UI.toast('🚁 Hold Space to take off · W/S fly · A/D turn · Shift to descend'); sendState(true); } else { const c = nearestCar(); if (c) enterCar(c); } }
       }
-      if (pressed.has('space')) attack();
+      if (pressed.has('space') || (keys.has('space') && me.weapon === 'smg')) attack();
     }
   }
   pressed.clear();
@@ -458,7 +575,8 @@ function update(dt) {
   // ---- simulate ----
   const near = (e, r = 600) => Math.abs(e.x - me.x) < r && Math.abs(e.y - me.y) < r;
   G.peopleNear = G.npcs.filter((n) => near(n, 300)); G.peopleNear.push(me);
-  for (const n of G.npcs) if (near(n)) n.update(dt, G);
+  updateFlying(dt); updateCopHeli(dt);
+  for (const n of G.npcs) if (near(n) && !n.fly) n.update(dt, G);
   for (const p of G.police) p.update(dt, G);
   if (S.kind === 'world') {
     for (const a of G.animals) if (near(a, 500)) a.update(dt, G);
@@ -559,7 +677,8 @@ export function bookCab(dest) {
 function sendState(force) {
   if (!G.online || !G.net.connected) return;
   const me = G.me;
-  const st = { t: 's', x: Math.round(me.x), y: Math.round(me.y), d: me.dir, m: me.moving ? 1 : 0, r: me.running ? 1 : 0, st: me.state, sc: sceneId(), w: me.weaponOut ? me.weapon : null, wa: G.wanted };
+  const st = { t: 's', x: Math.round(me.x), y: Math.round(me.y), d: me.dir, m: me.moving ? 1 : 0, r: me.running ? 1 : 0, st: me.state, sc: sceneId(), w: me.weaponOut ? me.weapon : null, wa: G.wanted, an: me.anim || null, fz: me.fly ? +me.fly.z.toFixed(2) : 0 };
+  if (me.heli) st.heli = { a: +me.heli.angle.toFixed(2), alt: +me.heli.alt.toFixed(1) };
   if (me.car) st.car = { type: me.car.type, a: +me.car.angle.toFixed(2) };
   const key = JSON.stringify(st);
   if (!force && key === G._lastSent && G.t - (G._lastSentT || 0) < 2) return;
@@ -591,13 +710,14 @@ function hookNet() {
         break;
       case 's': {
         const o = G.other || (G.other = { x: m.x, y: m.y, name: 'Partner', look: PRESETS.her });
-        o.tx = m.x; o.ty = m.y; o.dir = m.d; o.moving = !!m.m; o.running = !!m.r; o.state = m.st; o.scene = m.sc; o.weapon = m.w; o.weaponOut = !!m.w; o.wanted = m.wa;
+        o.tx = m.x; o.ty = m.y; o.dir = m.d; o.moving = !!m.m; o.running = !!m.r; o.state = m.st; o.scene = m.sc; o.weapon = m.w; o.weaponOut = !!m.w; o.wanted = m.wa; o.anim = m.an; o.fz = m.fz || 0; o.heli = m.heli || null;
         if (m.car) { if (!o.car || o.car.type !== m.car.type) o.car = { type: m.car.type, angle: m.car.a, ta: m.car.a }; else o.car.ta = m.car.a; } else o.car = null;
         if (o.x === undefined || isNaN(o.x)) { o.x = m.x; o.y = m.y; }
         break;
       }
       case 'look': if (G.other) G.other.look = m.look; askFace(m.look); break;
       case 'faceChunk': onFaceChunk(m); break;
+      case 'act': onPartnerAct(m); break;
       case 'needFace': sendFace(); break;
       case 'chat': UI.chatMsg(m.text, 'them', m.img); sfx.msg(); break;
       case 'time': G.time = m.time; break;
@@ -669,7 +789,9 @@ function render(dt) {
   const it = !UI.isOpen() && !G.me.car ? interactTarget() : null;
   let label = it ? it.label : null, key = 'E';
   if (!it && S.kind === 'world' && !me.car) { const c = nearestCar(); if (c) { label = c.taxi ? 'Get in your cab' : c.owned ? 'Drive your car' : c.parked ? 'Steal car' : 'Jack car'; key = 'F'; } }
+  if (!it && S.kind === 'world' && !me.car && !me.heli && G.helis.some((q) => dist(q.x, q.y, me.x, me.y) < 36 && q.alt < 1)) { label = 'Fly helicopter'; key = 'F'; }
   if (me.car) { label = me.car.taxi ? 'Exit cab' : 'Exit vehicle'; key = 'F'; }
+  if (me.heli) { label = me.heli.alt > 0.8 ? `Altitude ${Math.round(me.heli.alt)} m` : 'Exit helicopter'; key = me.heli.alt > 0.8 ? '🚁' : 'F'; }
   UI.prompt(label, key);
 }
 const FOOD_COL = { biryani: '#f2d890', roll: '#e8b060', rosogolla: '#ffffff', coffee: '#6b3a1a', tea: '#b8642a', pastry: '#3a1a0c', chelo: '#8a4a22', phuchka: '#d8a050', sizzler: '#4a3a2a' };
@@ -709,7 +831,7 @@ export async function startGame({ name, preset, code, online }) {
   view = new View(cv, pickQuality());
   view.setWorld(G.world); buildRadar(); setupLook(); document.getElementById('radar').classList.remove('hidden');
   G.world.spawn = { x: 101 * T + 8, y: 97 * T + 10 };
-  initAnimals();
+  initAnimals(); initHelis();
   G.npcs = [];
   setScene(G.world, G.world.spawn.x, G.world.spawn.y, 'down');
   UI.loading(false);

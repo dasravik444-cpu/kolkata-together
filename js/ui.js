@@ -74,7 +74,10 @@ export function banner(name, tip) { const b = $('banner'); b.innerHTML = esc(nam
 export function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; $('toasts').appendChild(t); setTimeout(() => t.remove(), 3200); while ($('toasts').children.length > 4) $('toasts').firstChild.remove(); }
 let bigT;
 export function bigText(txt, sub = '', ms = 2400) { const b = $('bigtext'); b.innerHTML = esc(txt) + (sub ? `<small>${esc(sub)}</small>` : ''); b.classList.remove('hidden'); clearTimeout(bigT); bigT = setTimeout(() => b.classList.add('hidden'), ms); }
-export function prompt(label, key = 'E') { const p = $('prompt'); if (!label || dialogOpen()) { p.classList.add('hidden'); return; } p.innerHTML = `<b>${key}</b>${esc(label)}`; p.classList.remove('hidden'); }
+export const TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+// on phones the action buttons are A and B; on keyboards E and F
+export const btn = (k) => (TOUCH ? { E: 'A', F: 'B' }[k] || k : k);
+export function prompt(label, key = 'E') { const p = $('prompt'); if (!label || dialogOpen() || document.getElementById('actmenu')) { p.classList.add('hidden'); return; } p.innerHTML = `<b>${btn(key)}</b>${esc(label)}`; p.classList.remove('hidden'); }
 export function wanted(n, flash) { const w = $('hud-wanted'); w.textContent = '★'.repeat(n) + '☆'.repeat(n ? 5 - n : 0); w.classList.toggle('flash', !!flash && n > 0); if (flash) setTimeout(() => w.classList.remove('flash'), 3000); }
 export function netStatus(s) { const el = $('hud-net'); el.textContent = s === 'solo' ? '🧍 solo' : s === 'connected' ? `🟢 ${G.other?.name || 'partner'} online` : '🟡 ' + s; }
 export function setPartner(n) { $('chat-partner').textContent = n; netStatus('connected'); }
@@ -89,7 +92,7 @@ export function hud() {
   $('bar-health').style.width = clamp(p.health, 0, 100) + '%';
   $('bar-hunger').style.width = clamp(p.hunger, 0, 100) + '%';
   $('hud-clock').textContent = (G.time / 60 >= 19 || G.time / 60 < 6 ? '🌙 ' : '☀ ') + clock;
-  const w = $('hud-weapon'); if (G.me.weapon) { w.classList.remove('hidden'); w.textContent = { knife: '🔪 Knife', bat: '🏏 Cricket bat', pistol: `🔫 Pistol (${p.ammo})` }[G.me.weapon]; } else w.classList.add('hidden');
+  const w = $('hud-weapon'); if (G.me.weapon) { w.classList.remove('hidden'); w.textContent = { knife: '🔪 Knife', bat: '🏏 Cricket bat', pistol: `🔫 Pistol (${p.ammo})`, smg: `🔫 SMG (${p.ammo})`, shotgun: `🔫 Shotgun (${p.ammo})`, rifle: `🎯 Rifle (${p.ammo})` }[G.me.weapon]; } else w.classList.add('hidden');
 }
 export function loading(on) { if (on) bigText('Building Kolkata…', 'laying roads, planting the Maidan, baking rum balls', 60000); else $('bigtext').classList.add('hidden'); }
 let fadeEl;
@@ -100,7 +103,7 @@ export function fade(fn) {
 export function say(npc, text) { npc.say = text; npc.sayUntil = G.t + 3; }
 
 /* ============================== dialogue ============================== */
-let dQueue = [], typing = null;
+let dQueue = [], typing = null, dTimer = null;
 export function dialog(name, text) {
   dQueue = String(text).match(/.{1,140}(\s|$)/g) || [text];
   $('dialog-name').textContent = name; $('dialog').classList.remove('hidden');
@@ -108,14 +111,35 @@ export function dialog(name, text) {
 }
 function typeNext() {
   const t = dQueue.shift(); const el = $('dialog-text'); el.textContent = ''; let i = 0;
-  clearInterval(typing); typing = setInterval(() => { el.textContent = t.slice(0, ++i); if (i >= t.length) { clearInterval(typing); typing = null; } }, 18);
+  clearInterval(typing); clearTimeout(dTimer);
+  typing = setInterval(() => { el.textContent = t.slice(0, ++i); if (i >= t.length) { clearInterval(typing); typing = null; autoNext(t); } }, 18);
   el.dataset.full = t;
 }
+// the box moves on / closes by itself once there's been time to read it — no extra tap needed
+function autoNext(t) { clearTimeout(dTimer); dTimer = setTimeout(() => dialogNext(), 1400 + t.length * 45); }
+export function closeDialog() { clearInterval(typing); typing = null; clearTimeout(dTimer); $('dialog').classList.add('hidden'); }
 export function dialogNext() {
-  if (typing) { clearInterval(typing); typing = null; $('dialog-text').textContent = $('dialog-text').dataset.full; return; }
+  if (typing) { clearInterval(typing); typing = null; $('dialog-text').textContent = $('dialog-text').dataset.full; autoNext($('dialog-text').dataset.full); return; }
+  clearTimeout(dTimer);
   if (dQueue.length) typeNext(); else $('dialog').classList.add('hidden');
 }
 export const dialogOpen = () => !$('dialog').classList.contains('hidden');
+
+/* ============================== action menu (near people) ============================== */
+let amTarget = null, amKeys = null;
+export function actionMenu(title, opts, onPick, target) {
+  closeActionMenu(); amTarget = target || null;
+  const el = document.createElement('div'); el.id = 'actmenu';
+  el.innerHTML = `<div class="am-title">${esc(title)}</div><div class="am-row">${opts.map(([k, ic, label], i) => `<button data-a="${k}"><i>${ic}</i><span>${esc(label)}</span>${TOUCH ? '' : `<b>${i + 1}</b>`}</button>`).join('')}</div>`;
+  document.body.appendChild(el);
+  const pickIt = (k) => { closeActionMenu(); onPick(k); };
+  el.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); pickIt(b.dataset.a); }));
+  amKeys = (e) => { const n = parseInt(e.key, 10); if (n >= 1 && n <= opts.length) { e.preventDefault(); pickIt(opts[n - 1][0]); } else if (e.key === 'Escape') closeActionMenu(); };
+  addEventListener('keydown', amKeys, true);
+  clearTimeout(actionMenu.t); actionMenu.t = setTimeout(closeActionMenu, 15000);
+}
+export function closeActionMenu() { const el = document.getElementById('actmenu'); if (el) el.remove(); if (amKeys) removeEventListener('keydown', amKeys, true); amKeys = null; amTarget = null; }
+export const actionMenuTarget = () => amTarget;
 
 /* ============================== modal helpers ============================== */
 let onClose = null;
@@ -294,15 +318,17 @@ export function tagTick(dt) {
 
 /* ============================== help ============================== */
 export function help() {
+  const A = btn('E'), B = btn('F');
   modal(head('Controls & tips') + `<div class="m-body"><div class="kv">
-  <b>Move</b><span>WASD / arrow keys (hold Shift to run) · on-screen stick on phones</span>
-  <b>E / Enter</b><span>Talk, enter buildings, sit, use things, stand up</span>
-  <b>F</b><span>Get in / out of cars · threaten someone (with a weapon)</span>
-  <b>Space</b><span>Attack / shoot / kick the football · horn while driving</span>
-  <b>Q</b><span>Cycle weapons</span><b>P</b><span>Phone: cabs, reservations, map, bank, garage, tag</span>
-  <b>T</b><span>Text chat</span><b>V</b><span>Voice call your partner</span><b>C</b><span>Selfie (both of you, if together)</span><b>M</b><span>Map</span><b>Esc</b><span>Close windows</span></div>
-  <h3>Things to do</h3><p>Eat at Flurys, Peter Cat, Mocambo, Trincas, Arsalan and Balaram Mullick · shop and try clothes at Forum, Quest, Acropolis and South City malls · makeover at the beauty parlour · football on the Maidan · zoo · boating at Rabindra Sarovar · golf · water park · movies at Nandan / Metro · planetarium · nightclub at The Park · bank loans, credit cards… or a vault heist (police will come!).</p>
-  <p class="note">Crime raises your wanted stars. Lose the cops or pay a fine at a police station. Get knocked out and you wake up at SSKM.</p></div><div class="m-foot"><button data-x class="primary">Got it</button></div>`);
+  <b>Move</b><span>WASD / arrow keys (Shift to run) · on-screen stick on phones · mouse or drag to look around</span>
+  <b>${A}</b><span>Talk / act on people (a menu pops up: talk, slap, punch, kick, throw, rob), enter buildings, sit, use things</span>
+  <b>${B}</b><span>Get in / out of cars and helicopters (steal or jack them) · threaten someone with a weapon</span>
+  <b>${TOUCH ? '⚡' : 'Space'}</b><span>Attack / shoot (hold for the SMG) · horn while driving · climb in a helicopter</span>
+  <b>${TOUCH ? 'Run' : 'Shift'}</b><span>Run · descend in a helicopter</span>
+  <b>Q</b><span>Cycle weapons</span><b>P</b><span>Phone: cabs, reservations, map, bank, garage, tag, my face, graphics</span>
+  <b>T / V / C</b><span>Chat · voice call · selfie</span></div>
+  <h3>Things to do</h3><p>Eat at Flurys, Peter Cat, Mocambo, Trincas, Arsalan and Balaram Mullick · shop and try clothes in the malls · makeover at the salon · visit any home or office · football on the Maidan · zoo · boating · golf · water park · movies · nightclub · fly a helicopter from the Brigade Parade Ground or the Race Course · rob a bank teller, a jewellery shop or the vault — the police (and their helicopter) will come!</p>
+  <p class="note">Next to your partner, press ${A} for hi-five, wave, pillow bonk and a playful shove.</p></div><div class="m-foot"><button data-x class="primary">Got it</button></div>`);
 }
 
 /* ============================== my face (photo) ============================== */
@@ -552,11 +578,11 @@ export function heist(bankKey) {
 }
 
 /* ============================== weapons / police / hospital / dealer ============================== */
-const WEAPONS = [['knife', 'Kitchen knife', 1500], ['bat', 'Cricket bat', 800], ['pistol', 'Pistol (+12 rounds)', 25000], ['ammo', '20 rounds of ammo', 1000]];
+const WEAPONS = [['knife', 'Kitchen knife', 1500], ['bat', 'Cricket bat', 800], ['pistol', 'Pistol (+12 rounds)', 25000], ['smg', 'SMG — automatic (+30)', 45000], ['shotgun', 'Shotgun (+10)', 55000], ['rifle', 'Rifle (+15)', 80000], ['ammo', '30 rounds of ammo', 1500]];
 export function weapons() {
   const p = G.profile;
-  modal(head('Maidan Armoury', 'Q cycles weapons · F threatens · Space attacks. Crimes bring the police!') + `<div class="m-body"><div class="menu-list">${WEAPONS.map(([k, n, pr]) => `<div class="menu-row"><span class="nm">${{ knife: '🔪', bat: '🏏', pistol: '🔫', ammo: '📦' }[k]} ${esc(n)}</span><span class="pr">${fmtMoney(pr)}</span>${k !== 'ammo' && p.weapons.includes(k) ? '<b>Owned</b>' : `<button data-w="${k}" data-p="${pr}">Buy</button>`}</div>`).join('')}</div><p class="note">Ammo: ${p.ammo}</p></div><div class="m-foot"><button data-x>Leave</button></div>`, { head: '#3a3a32' });
-  $('modal-box').querySelectorAll('[data-w]').forEach((b) => (b.onclick = () => { const k = b.dataset.w; if (!pay(+b.dataset.p, k)) return; if (k === 'ammo') p.ammo += 20; else { p.weapons.push(k); if (k === 'pistol') p.ammo += 12; } API.saveProfile(); toast('Purchased. Press Q to equip.'); weapons(); }));
+  modal(head('Maidan Armoury', 'Q cycles weapons · F threatens · Space attacks. Crimes bring the police!') + `<div class="m-body"><div class="menu-list">${WEAPONS.map(([k, n, pr]) => `<div class="menu-row"><span class="nm">${{ knife: '🔪', bat: '🏏', pistol: '🔫', smg: '🔫', shotgun: '🔫', rifle: '🎯', ammo: '📦' }[k]} ${esc(n)}</span><span class="pr">${fmtMoney(pr)}</span>${k !== 'ammo' && p.weapons.includes(k) ? '<b>Owned</b>' : `<button data-w="${k}" data-p="${pr}">Buy</button>`}</div>`).join('')}</div><p class="note">Ammo: ${p.ammo}</p></div><div class="m-foot"><button data-x>Leave</button></div>`, { head: '#3a3a32' });
+  $('modal-box').querySelectorAll('[data-w]').forEach((b) => (b.onclick = () => { const k = b.dataset.w; if (!pay(+b.dataset.p, k)) return; if (k === 'ammo') p.ammo += 30; else { p.weapons.push(k); p.ammo += { pistol: 12, smg: 30, shotgun: 10, rifle: 15 }[k] || 0; } API.saveProfile(); toast('Purchased. Press Q to equip.'); weapons(); }));
 }
 export function policeDesk() {
   if (G.wanted <= 0) return dialog('Inspector Ghosh', 'All quiet. Enjoy the city — and stay out of trouble, okay?');

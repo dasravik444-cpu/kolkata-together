@@ -122,6 +122,7 @@ export class Police extends NPC {
 export class Animal {
   constructor(kind, x, y, bounds) { this.kind = kind; this.x = x; this.y = y; this.bounds = bounds; this.timer = Math.random() * 3; this.dx = 0; this.dy = 0; this.face = -1; this.flyT = 0; }
   update(dt, G) {
+    if (this.fly) return;
     const A = ANIMALS[this.kind]; this.timer -= dt;
     const p = G.me;
     if (this.kind === 'crow' && dist(this.x, this.y, p.x, p.y) < 30 && !this.flyT) { this.flyT = 2.5; this.dx = (this.x - p.x) > 0 ? 1 : -1; this.dy = -0.7; }
@@ -218,7 +219,12 @@ export class Car {
     if (!hitX && !nose) this.x += vx; if (!hitY && !nose) this.y += vy;
     if (hitX || hitY || nose) { if (Math.abs(this.speed) > 80) G.shake(4); this.speed *= -0.25; }
     // knock pedestrians
-    if (Math.abs(this.speed) > 40) for (const n of G.npcs) if (n.state !== 'ko' && dist(n.x, n.y, this.x, this.y) < this.len / 2) { n.state = 'ko'; n.timer = 4; G.crime(1, n); }
+    // anyone (or any animal) hit by a fast car goes flying — cartoon style
+    if (Math.abs(this.speed) > 40) {
+      const hx = Math.cos(this.angle), hy = Math.sin(this.angle), sp = Math.abs(this.speed);
+      for (const n of G.npcs) if (n.state !== 'ko' && !n.fly && dist(n.x, n.y, this.x, this.y) < this.len / 2) { n.state = 'ko'; n.timer = 4; if (G.launch) G.launch(n, hx * sp * 0.9 + (Math.random() - 0.5) * 40, hy * sp * 0.9 + (Math.random() - 0.5) * 40, 3 + sp * 0.03, 8); G.crime(1, n); G.shake(2); }
+      if (G.animals) for (const a of G.animals) if (!a.fly && a.kind !== 'crow' && !a.bounds && dist(a.x, a.y, this.x, this.y) < this.len / 2 + 4) { if (G.launch) G.launch(a, hx * sp + (Math.random() - 0.5) * 60, hy * sp + (Math.random() - 0.5) * 60, 4 + sp * 0.035, 10 + Math.random() * 6); G.sfx && G.sfx.hit(); G.shake(2); if (G.onAnimalHit) G.onAnimalHit(a); }
+    }
     for (const c of G.cars) if (c !== this && dist(c.x, c.y, this.x, this.y) < (this.len + c.len) / 3) { const a = Math.atan2(c.y - this.y, c.x - this.x); c.x += Math.cos(a) * 3; c.y += Math.sin(a) * 3; if (Math.abs(this.speed) > 90) G.shake(3); this.speed *= 0.6; }
   }
   draw(ctx) {

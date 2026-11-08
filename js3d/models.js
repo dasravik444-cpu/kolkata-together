@@ -241,7 +241,11 @@ function buildHair(head, app, add, photo) {
   // back of head coverage
   add(head, new THREE.SphereGeometry(0.112, 20, 14, 0, Math.PI, 0, Math.PI * 0.62), hm, 0, 0.0, -0.01, 0.95, 1.05, 1.02).rotation.y = Math.PI / 2 + Math.PI / 2;
   switch (h) {
-    case 'swept': for (let k = 0; k < 5; k++) { const q = add(head, new THREE.SphereGeometry(0.05, 12, 8), hm, -0.05 + k * 0.025, 0.105 - Math.abs(k - 2) * 0.006, 0.03 - k * 0.004, 1.0, 0.7, 2.0); q.rotation.x = -0.5; q.rotation.y = (k - 2) * 0.15; } add(head, new THREE.SphereGeometry(0.045, 10, 8), hm, 0.02, 0.098, 0.075, 1.6, 0.7, 1.0).rotation.z = -0.25; break;
+    case 'swept': { // smooth swept-back volume with a slight side part
+      const q = add(head, new THREE.SphereGeometry(0.1, 24, 16), hm, 0.004, 0.092, 0.0, 1.0, 0.62, 1.12); q.rotation.x = -0.32;
+      const f2 = add(head, new THREE.SphereGeometry(0.06, 18, 12), hm, 0.018, 0.098, 0.062, 1.45, 0.62, 0.9); f2.rotation.z = -0.18; f2.rotation.x = -0.2;
+      break;
+    }
     case 'curly': for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; add(head, new THREE.SphereGeometry(0.04, 10, 8), hm, Math.cos(a) * 0.08, 0.1 + Math.sin(i * 1.7) * 0.02, Math.sin(a) * 0.08); } break;
     case 'short': add(head, new THREE.SphereGeometry(0.1, 16, 10), hm, 0, 0.085, 0.01, 1.08, 0.45, 1.1); break;
     case 'long': case 'wavy': case 'braid': {
@@ -302,10 +306,18 @@ const PROFILES = { // side profile points (x from rear to front in 0..1 of L, y 
   suv: { body: [[0, 0.42], [0, 1.0], [0.2, 1.05], [0.78, 1.05], [0.96, 0.96], [1, 0.78], [1, 0.42]], cab: [0.04, 0.8, 0.06, 0.66, 1.78] },
   sports: { body: [[0, 0.26], [0, 0.72], [0.1, 0.76], [0.3, 0.8], [0.62, 0.78], [0.9, 0.6], [1, 0.46], [1, 0.26]], cab: [0.28, 0.7, 0.36, 0.54, 1.14] },
 };
-function extrudeProfile(pts, L, W, bevel = 0.06) {
-  const sh = new THREE.Shape(); pts.forEach(([x, y], i) => (i ? sh.lineTo(x * L - L / 2, y) : sh.moveTo(x * L - L / 2, y)));
-  const g = new THREE.ExtrudeGeometry(sh, { depth: W - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 6 });
-  g.translate(0, 0, -(W - bevel * 2) / 2); g.computeVertexNormals(); return g;
+// smooth body: spline through the profile's upper contour, flat underside, sides tapering inward ("tumblehome")
+function extrudeProfile(pts, L, W, bevel = 0.06, smooth = true, taperFrom = 0.8, taper = 0.16) {
+  const sh = new THREE.Shape();
+  if (smooth && pts.length > 3) {
+    const curve = new THREE.SplineCurve(pts.map(([x, y]) => new THREE.Vector2(x * L - L / 2, y)));
+    curve.getPoints(48).forEach((p, i) => (i ? sh.lineTo(p.x, p.y) : sh.moveTo(p.x, p.y)));
+  } else pts.forEach(([x, y], i) => (i ? sh.lineTo(x * L - L / 2, y) : sh.moveTo(x * L - L / 2, y)));
+  sh.closePath();
+  const g = new THREE.ExtrudeGeometry(sh, { depth: W - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 4, curveSegments: 8 });
+  g.translate(0, 0, -(W - bevel * 2) / 2);
+  const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const y = p.getY(i); if (y > taperFrom) p.setZ(i, p.getZ(i) * (1 - Math.min(1, (y - taperFrom)) * taper)); }
+  g.computeVertexNormals(); return g;
 }
 const vehCache = {};
 export function buildVehicle(type) {
@@ -337,13 +349,13 @@ function makeVehicle(type, spec) {
   const light = (x, y, z, col, w = 0.25, h = 0.1) => { const m = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.4 }); const me = add(new THREE.BoxGeometry(0.05, h, w), m, x, y, z); me.userData.light = col === '#ffffff' || col === '#fff6d0' ? 'head' : 'tail'; return me; };
   if (PROFILES[spec.kind]) {
     const P = PROFILES[spec.kind];
-    add(extrudeProfile(P.body, L, W), paint);
+    add(extrudeProfile(P.body, L, W, 0.07, true, 0.55, 0.1), paint);
     const [x0, x1, x2, x3, rh] = P.cab;
     const belt = Math.max(...P.body.map((p) => p[1])) - 0.04;
     const cab = [[x0, belt], [x2, rh], [x3, rh], [x1, belt]];
-    add(extrudeProfile(cab, L, W - 0.16, 0.05), glass);
+    add(extrudeProfile(cab, L, W - 0.16, 0.05, false, belt, 0.22), glass);
     // roof + pillars in body colour
-    add(extrudeProfile([[x2 - 0.01, rh - 0.05], [x2, rh + 0.03], [x3, rh + 0.03], [x3 + 0.01, rh - 0.05]], L, W - 0.14, 0.04), paint);
+    add(extrudeProfile([[x2 - 0.01, rh - 0.05], [x2, rh + 0.03], [x3, rh + 0.03], [x3 + 0.01, rh - 0.05]], L, W - 0.14, 0.04, false, 0, 0.0), paint).scale.z = 1 - (rh - belt) * 0.22;
     for (const sz of [-1, 1]) for (const [xa, xb] of [[x0, x2], [x1, x3]]) { const px = ((xa + xb) / 2) * L - L / 2, len = Math.hypot((xb - xa) * L, rh - belt); const p = add(new THREE.BoxGeometry(0.07, len, 0.06), paint, px, (belt + rh) / 2, sz * (W / 2 - 0.1)); p.rotation.z = -Math.atan2((xb - xa) * L, rh - belt); }
     for (const sz of [-1, 1]) { const bp = add(new THREE.BoxGeometry(0.06, rh - belt, 0.06), paint, ((x0 + x1) / 2) * L - L / 2, (belt + rh) / 2, sz * (W / 2 - 0.1)); bp.scale.y = 0.95; }
     const r = spec.kind === 'sports' ? 0.36 : spec.kind === 'suv' ? 0.4 : 0.32;
@@ -355,6 +367,16 @@ function makeVehicle(type, spec) {
     else for (const sz of [-1, 1]) light(L / 2 + 0.01, hy, sz * (W / 2 - 0.3), '#ffffff', 0.34, 0.08);
     for (const sz of [-1, 1]) light(-L / 2 - 0.01, hy + 0.05, sz * (W / 2 - 0.25), '#e01818', 0.3, 0.1);
     for (const sz of [-1, 1]) add(new THREE.BoxGeometry(0.16, 0.08, 0.04), paint, 0.25 * L - L / 2 + L * 0.3, belt + 0.05, sz * (W / 2 + 0.03)); // mirrors
+    // detail: wheel arches, door seams + handles, side skirt, grille, lenses
+    const wx = L / 2 - (spec.kind === 'sports' ? 0.85 : 0.78);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const ar = add(new THREE.TorusGeometry(r + 0.05, 0.055, 6, 18, Math.PI), dark, sx * wx, r, sz * (W / 2 - 0.02)); ar.castShadow = false; }
+    const seam = mat('#1a1a1e', { r: 0.6 });
+    for (const sz of [-1, 1]) {
+      for (const fx of spec.kind === 'sports' || spec.kind === 'hatch' ? [0.52] : [0.42, 0.62]) add(new THREE.BoxGeometry(0.012, belt - 0.42, 0.006), seam, fx * L - L / 2, (belt + 0.38) / 2 + 0.02, sz * (W / 2 + 0.002));
+      for (const fx of spec.kind === 'sports' || spec.kind === 'hatch' ? [0.46] : [0.36, 0.56]) add(new THREE.BoxGeometry(0.1, 0.022, 0.02), chrome, fx * L - L / 2, belt - 0.12, sz * (W / 2 + 0.01));
+      add(new THREE.BoxGeometry(L - 1.9, 0.05, 0.03), spec.kind === 'amby' ? chrome : dark, 0, 0.36, sz * (W / 2 + 0.005));
+    }
+    if (spec.kind !== 'amby') { add(new THREE.BoxGeometry(0.03, 0.12, W * 0.42), mat('#141416', { r: 0.4, m: 0.4 }), L / 2 + 0.03, spec.kind === 'sports' ? 0.42 : 0.52, 0); add(new THREE.BoxGeometry(0.035, 0.14, W * 0.44), chrome, L / 2 + 0.02, spec.kind === 'sports' ? 0.42 : 0.52, 0).scale.set(1, 1, 1); }
     const plate = new THREE.MeshStandardMaterial({ color: spec.kind === 'amby' ? '#f2d02a' : '#f2f2f2', roughness: 0.5 });
     add(new THREE.BoxGeometry(0.02, 0.12, 0.42), plate, L / 2 + 0.09, 0.4, 0); add(new THREE.BoxGeometry(0.02, 0.12, 0.42), plate, -L / 2 - 0.09, 0.42, 0);
     if (spec.kind === 'police') { add(new THREE.BoxGeometry(0.25, 0.1, 1.0), dark, (x2 + x3) / 2 * L - L / 2, rh + 0.08, 0); const b = light((x2 + x3) / 2 * L - L / 2, rh + 0.15, -0.25, '#2a5aff', 0.45, 0.1); b.userData.light = 'siren'; const r2 = light((x2 + x3) / 2 * L - L / 2 + 0.001, rh + 0.15, 0.25, '#ff2a2a', 0.45, 0.1); r2.userData.light = 'siren'; add(new THREE.BoxGeometry(L * 0.9, 0.12, 0.01), mat('#2a5ad4'), 0, 0.6, W / 2 + 0.005); add(new THREE.BoxGeometry(L * 0.9, 0.12, 0.01), mat('#2a5ad4'), 0, 0.6, -W / 2 - 0.005); }
@@ -410,6 +432,7 @@ function compact(root) {
 /* ================================ ANIMALS ================================ */
 const AN = {
   dog: { L: 0.7, H: 0.5, body: '#a8763e', legs: '#8a5a2a', head: 0.13 }, dog2: { L: 0.7, H: 0.5, body: '#2a2620', legs: '#1d1a16', head: 0.13 },
+  cat: { L: 0.45, H: 0.3, body: '#e0903a', legs: '#c87a2a', head: 0.08, pat: 'stripes2' }, cat2: { L: 0.45, H: 0.3, body: '#8a8a92', legs: '#6a6a70', head: 0.08 },
   cow: { L: 1.9, H: 1.35, body: '#f0ece2', legs: '#d8d2c4', head: 0.22, hump: true, horns: true }, horse: { L: 2.0, H: 1.6, body: '#7a4a28', legs: '#5a3420', head: 0.2, mane: '#1d140c', neck: 1.2 },
   goat: { L: 0.9, H: 0.75, body: '#f2f2f0', legs: '#c9c9c4', head: 0.14, horns: true }, tiger: { L: 2.2, H: 1.0, body: '#e8801e', pat: 'tiger', legs: '#e07a1a', head: 0.24 },
   lion: { L: 2.1, H: 1.1, body: '#c99a48', legs: '#b88a3a', head: 0.24, mane: '#6a4420' }, zebra: { L: 1.9, H: 1.4, body: '#f4f4f4', pat: 'stripes', legs: '#f0f0f0', head: 0.2, mane: '#1d1b20', neck: 1 },
@@ -437,7 +460,7 @@ export function buildAnimal(kind) {
     g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); return g;
   }
   const A = AN[kind] || AN.dog;
-  const bm = A.pat ? new THREE.MeshStandardMaterial({ map: pattern(A.pat, A.body, A.pat === 'spots' ? '#7a4a1a' : '#1d1b20'), roughness: 0.85 }) : mat(A.body, { r: 0.85 });
+  const bm = A.pat ? new THREE.MeshStandardMaterial({ map: A.pat === 'stripes2' ? pattern('stripes', A.body, '#c06a20') : pattern(A.pat, A.body, A.pat === 'spots' ? '#7a4a1a' : '#1d1b20'), roughness: 0.85 }) : mat(A.body, { r: 0.85 });
   const lm = mat(A.legs, { r: 0.85 });
   const legH = A.H * 0.52, bodyR = A.H * 0.22;
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(bodyR, A.L - bodyR * 2, 6, 14), bm); body.rotation.x = Math.PI / 2; body.position.y = legH + bodyR * 0.6; g.add(body);
@@ -452,7 +475,8 @@ export function buildAnimal(kind) {
   if (A.horn) { const h = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.35, 8), mat('#c8c0b0')); h.position.set(0, hy + A.head * 0.5, hz + A.head * 1.1); h.rotation.x = 0.4; g.add(h); }
   if (A.antler) for (const sx of [-1, 1]) { const a = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.018, 0.4), mat('#6a4a2a')); a.position.set(sx * 0.08, hy + 0.3, hz - 0.05); a.rotation.z = -sx * 0.4; g.add(a); }
   if (A.trunk) { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.13, 1.4, 10), bm); t.position.set(0, hy - 0.7, hz + A.head * 0.9); t.rotation.x = -0.15; g.add(t); for (const sx of [-1, 1]) { const ear = new THREE.Mesh(new THREE.CircleGeometry(0.45, 14), new THREE.MeshStandardMaterial({ color: A.body, side: THREE.DoubleSide, roughness: 0.9 })); ear.position.set(sx * 0.42, hy, hz - 0.3); ear.rotation.y = sx * 1.2; g.add(ear); } }
-  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.035, A.H * 0.45, 6), bm); tail.position.set(0, legH + bodyR * 0.6, -A.L / 2 - 0.05); tail.rotation.x = -0.5; g.add(tail);
+  const isCat = kind === 'cat' || kind === 'cat2';
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(isCat ? 0.012 : 0.02, isCat ? 0.016 : 0.035, A.H * (isCat ? 1.0 : 0.45), 6), bm); tail.position.set(0, legH + bodyR * (isCat ? 1.6 : 0.6), -A.L / 2 - 0.02); tail.rotation.x = isCat ? 0.35 : -0.5; g.add(tail);
   for (const [lx, lz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
     const pivot = new THREE.Group(); pivot.position.set(lx * bodyR * 0.6, legH, lz * (A.L / 2 - bodyR * 0.7));
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(bodyR * 0.25, bodyR * 0.18, legH, 8), lm); leg.position.y = -legH / 2; pivot.add(leg);
@@ -563,4 +587,27 @@ export class SimpleHuman {
     this.root.children[0].rotation.z = 0; this.root.children[0].position.set(0, 0, 0);
     this.legs[0].rotation.x = Math.sin(this.t) * a; this.legs[1].rotation.x = -Math.sin(this.t) * a;
   }
+}
+export { bodyGeo, buildHair, buildGlasses, buildHat, clothMat, it };
+
+/* ================================ HELICOPTER ================================ */
+export function buildHeli(police) {
+  const g = new THREE.Group();
+  const paint = new THREE.MeshPhysicalMaterial({ color: police ? '#f2f2f2' : '#c8202a', metalness: 0.5, roughness: 0.3, clearcoat: 1 });
+  const dark = mat('#1d1d22', { r: 0.5, m: 0.4 }), glass = new THREE.MeshPhysicalMaterial({ color: '#1a2a38', metalness: 0.3, roughness: 0.05, transparent: true, opacity: 0.85 });
+  const add = (geo, m, x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.rotation.set(rx, ry, rz); me.scale.set(sx, sy, sz); me.castShadow = true; g.add(me); return me; };
+  add(new THREE.SphereGeometry(1, 24, 16), paint, 0, 1.45, 0.2, 0, 0, 0, 1.05, 0.95, 1.9);
+  add(new THREE.SphereGeometry(0.9, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.6), glass, 0, 1.55, 1.15, -1.0, 0, 0, 0.95, 1, 0.9);
+  add(new THREE.CylinderGeometry(0.16, 0.3, 4.2, 12), paint, 0, 1.75, -2.6, Math.PI / 2 + 0.06);
+  add(new THREE.BoxGeometry(0.08, 1.1, 0.7), paint, 0, 2.15, -4.6);
+  add(new THREE.BoxGeometry(1.4, 0.06, 0.4), paint, 0, 1.75, -4.3);
+  for (const sx of [-1, 1]) { add(new THREE.CylinderGeometry(0.05, 0.05, 2.9, 8), dark, sx * 0.85, 0.12, 0.2, Math.PI / 2); for (const z of [-0.5, 0.9]) add(new THREE.CylinderGeometry(0.04, 0.04, 0.75, 6), dark, sx * 0.7, 0.45, z, 0, 0, sx * 0.35); }
+  if (police) { add(new THREE.BoxGeometry(2.1, 0.25, 0.02), mat('#2a5ad4'), 0, 1.35, 0.2).scale.set(1, 1, 1); for (const sx of [-1, 1]) add(new THREE.BoxGeometry(0.02, 0.25, 3.0), mat('#2a5ad4'), sx * 1.04, 1.35, 0.2); }
+  add(new THREE.CylinderGeometry(0.12, 0.12, 0.45, 10), dark, 0, 2.55, 0.1);
+  const rotor = new THREE.Group(); rotor.position.set(0, 2.8, 0.1); g.add(rotor);
+  for (let k = 0; k < 4; k++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.03, 5.2), dark); b.position.z = 2.6; const arm = new THREE.Group(); arm.rotation.y = (k / 4) * Math.PI * 2; arm.add(b); rotor.add(arm); }
+  const tail = new THREE.Group(); tail.position.set(0.1, 2.15, -4.65); g.add(tail);
+  for (let k = 0; k < 2; k++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.2, 0.12), dark); b.rotation.x = k * Math.PI / 2; tail.add(b); }
+  g.userData.rotor = rotor; g.userData.tail = tail;
+  return g;
 }

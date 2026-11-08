@@ -86,7 +86,7 @@ function room(id, name, W, H, pal) {
   };
   S.wall = (kind, tx, o = {}) => S.put(kind, tx, 2, { ...o, dy: o.dy ?? 12 }, 0);
   S.act = (tx, ty, tw, th, kind, data, label) => S.interact.push({ x: tx * T, y: ty * T, w: tw * T, h: th * T, kind, data, label });
-  S.npc = (tx, ty, role, o = {}) => S.npcs.push({ x: tx * T + 8, y: ty * T + 12, role, look: o.look || randomLook(tx * 13 + ty * 7 + id.length), dir: o.dir || 'down', line: o.line, wander: !!o.wander, name: o.name });
+  S.npc = (tx, ty, role, o = {}) => { if (role === 'sitter' && !o.noChair) S.put('chair', tx, ty, { col: '#3a3a42', dir: 'down' }, 0); return S.npcs.push({ x: tx * T + 8, y: ty * T + 12, role, look: o.look || randomLook(tx * 13 + ty * 7 + id.length), dir: o.dir || 'down', line: o.line, wander: !!o.wander, name: o.name }); };
   S.seat = (tx, ty, dir, table) => { S.seats.push({ x: tx * T + 8, y: ty * T + 12, dir, table }); S.act(tx, ty, 1, 1, 'seat', S.seats.length - 1, 'Sit down'); };
   S.fillT = (x0, y0, x1, y1, t) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) ground[y * W + x] = t; };
   return S;
@@ -109,6 +109,8 @@ export function buildInterior(id) {
     case 'mall': return mall(sub);
     case 'bank': return bank(sub);
     case 'home': return home();
+    case 'flat': return flat(+sub || 1);
+    case 'office': return office(+sub || 1);
     case 'armoury': return armoury();
     case 'salon': return salon();
     case 'hospital': return hospital();
@@ -239,6 +241,36 @@ function home() {
   S.tables = [{ x: 15 * T + 8, y: 9 * T + 8 }];
   S.put('shelf', 11, 4, { w: 1 }, 1); S.put('plant', 18, 12, {}, 1); S.put('plant', 1, 12, {}, 1);
   S.wall('window', 3, { w: 28 }); S.wall('painting', 15, { w: 22, seed: 11 }); S.wall('window', 11, { w: 22 });
+  return S;
+}
+
+const SURNAMES = ['Banerjee', 'Chatterjee', 'Mukherjee', 'Ghosh', 'Bose', 'Sen', 'Das', 'Dutta', 'Roy', 'Mitra', 'Sarkar', 'Gupta'];
+const FLAT_LINES = ['Eso, eso! Come in — cha khabe? Tea?', 'Oh, a guest! Sit, sit. The match is on TV.', 'Shh, the serial is at the best part!', 'Have you eaten? I made luchi and alur dom.', 'Close the door, the mosquitoes are coming in!', 'Didi is studying for exams, don\'t disturb her.', 'Durga Puja shopping done? Not yet? Ki!'];
+function flat(seed) {
+  const r = mulberry(seed); const fam = SURNAMES[seed % SURNAMES.length];
+  const walls = ['#f2e2c8', '#d8e8f0', '#f0d8d8', '#e0f0d8', '#f4ecd0'], rugs = ['#7a1f2b', '#2f5a8a', '#3a6a3a', '#8a5a2a'];
+  const S = room('flat:' + seed, `The ${fam}s' flat`, 18, 13, { floor: r() < 0.5 ? TL.WOOD : TL.CHECKER, c1: '#c8b89a', c2: '#f2ead8', wall: walls[seed % walls.length], stripe: '#c48a52', walltop: '#5a3a24', wood: ['#c48a52', '#a8703f', '#d8a870'][seed % 3], rug: rugs[seed % rugs.length], rug2: '#e3b341' });
+  S.fillT(5, 7, 11, 9, TL.RUG);
+  S.put('bed', 1, 4, { col: rugs[(seed + 1) % rugs.length] }, 1, 2, 3);
+  S.put('tv', 7, 4, { on: true }, 1, 2, 1); S.put('shelf', 10, 4, { w: 1 }, 1); S.put('wardrobe', 4, 4, {}, 1, 2, 1);
+  S.put('sofa', 6, 10, { w: 3, col: ['#5a2a3a', '#2a4a6a', '#5a4a2a'][seed % 3] }, 1, 3, 1);
+  S.put('fridge', 13, 4, {}, 1); S.put('stove', 14, 4, {}, 1, 2, 1);
+  S.put('table', 14, 8, { top: '#c48a52' }, 1); S.put('chair', 13, 8, { col: '#6b4226' }, 0); S.put('chair', 15, 8, { col: '#6b4226' }, 0); S.seat(13, 8, 'right', 0); S.seat(15, 8, 'left', 0); S.tables = [{ x: 14 * T + 8, y: 8 * T + 8 }];
+  S.put('plant', 16, 11, {}, 1); S.wall('window', 3, { w: 26 }); S.wall('painting', 12, { w: 22, seed }); S.wall('window', 9, { w: 22 });
+  S.seat(7, 9, 'up', 'sofa'); S.seat(8, 9, 'up', 'sofa');
+  S.npc(6, 9, 'sitter', { dir: 'up', noChair: true, name: `Mr. ${fam}`, line: FLAT_LINES[seed % FLAT_LINES.length] });
+  S.npc(14, 5, 'customer', { name: `Mrs. ${fam}`, line: FLAT_LINES[(seed + 3) % FLAT_LINES.length] });
+  if (r() < 0.6) S.npc(3, 9, 'customer', { wander: true, name: 'Kid', line: 'Wanna play cricket on the roof?' });
+  S.act(7, 5, 2, 1, 'tv', null, 'Watch TV with them');
+  return S;
+}
+function office(seed) {
+  const r = mulberry(seed);
+  const S = room('office:' + seed, ['Tea Board office', 'Software company', 'Insurance office', 'Shipping company', 'Newspaper office', 'Bank back-office'][seed % 6], 22, 14, { floor: TL.CARPET, carpet: ['#3a4a5a', '#4a3a3a', '#3a4a3a'][seed % 3], wall: '#e8e8ea', stripe: '#2a4a8a', walltop: '#2a2a35' });
+  for (let row = 0; row < 3; row++) for (let k = 0; k < 4; k++) { const x = 2 + k * 5, y = 5 + row * 3; S.put('desk', x, y, { w: 3, pc: true }, 1, 3, 1); if (r() < 0.75) S.npc(x + 1, y - 1, 'sitter', { dir: 'down', line: ['Deadline is today, please go away!', 'Lunch break is at 1. Biryani?', 'My boss is watching…', 'Excel crashed again!', 'Weekend plans? Mandarmani!'][(row * 4 + k + seed) % 5] }); }
+  S.put('plant', 1, 12, {}, 1); S.put('plant', 20, 12, {}, 1); S.put('counter', 16, 3, { w: 4 }, 1, 4, 1);
+  S.npc(18, 12, 'customer', { name: 'Manager', line: 'Interview? Sit down, we will call you.' });
+  for (let k = 0; k < 4; k++) S.wall('window', 2 + k * 5, { w: 28 });
   return S;
 }
 

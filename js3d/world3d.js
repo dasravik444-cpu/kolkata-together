@@ -388,7 +388,11 @@ export function buildCity(world) {
   const r = mulberry(11); const HB = new Batcher();
   for (let i = 0; i < 70; i++) { const h = 6 + r() * 28, w = 8 + r() * 14; HB.add(new THREE.BoxGeometry(w, h, w), facadeMat(r() < 0.3 ? 'tower' : 'house', ['#d8c8b0', '#c8b8a8', '#e0d0b8', '#b8b0a8'][i % 4], i, '#5a7a6a'), mtx(-320 + r() * 160, h / 2, -200 + i * 14, 0)); }
   HB.build(root);
-  return { root, lamps, waters, nightMats };
+  // roof heights per tile, used to keep helicopters out of buildings
+  const hgrid = new Float32Array(world.W * world.H);
+  const LH = { victoria: 37, minar: 48, cathedral: 38, planetarium: 15, stadium: 33, bridge: 60, fort: 6, tent: 7, newmarket: 22, stall: 3, gate: 6 };
+  for (const b of world.buildings) { const h = LH[b.style] ?? (Math.max(2, (b.floors || 2) + (b.style === 'tower' ? 2 : 0) + (b.style === 'house' ? 1 : 0)) * FLOOR_H + 3); for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) hgrid[y * world.W + x] = Math.max(hgrid[y * world.W + x], h); }
+  return { root, lamps, waters, nightMats, hgrid };
 }
 
 /* ------------------------------ interiors ------------------------------ */
@@ -413,6 +417,7 @@ export function buildInterior3D(S, lamps = []) {
     obj.position.x = o.x * M; obj.position.z = Math.max(northZ + 0.3, o.y * M - (o.kind === 'chair' ? 0.3 : 0.6));
     if (o.kind === 'painting' || o.kind === 'window' || o.kind === 'sign' || o.kind === 'menuboard' || o.kind === 'gunrack' || o.kind === 'screen' || o.kind === 'vault' || o.kind === 'mirror' && ty <= 4) obj.position.z = northZ + 0.08;
     if (o.kind === 'chandelier') obj.position.z = ty * TS;
+    if (o.kind === 'sofa') { obj.position.z = o.y * M - 2.15; obj.rotation.y = Math.PI; obj.position.x += (o.img ? o.img.width * M : 6); }
     void tx; root.add(obj);
   }
   for (const n of [0.3, 0.7]) lamps.push([W * n, WH - 0.3, (northZ + D) / 2, 'room']);

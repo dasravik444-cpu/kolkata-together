@@ -112,6 +112,11 @@ export function buildWorld() {
 
   /* ---------------- buildings ---------------- */
   const B = (x, y, w, h, o = {}) => {
+    // every ordinary building can be entered: homes become flats, towers/offices get an office floor
+    if (!o.interior && !['stadium', 'fort', 'tent', 'minar', 'stall', 'gate', 'bridge'].includes(o.style)) {
+      const seed0 = (x * 73 + y * 151) | 0;
+      o = { ...o, interior: (o.style === 'tower' || /Tower|House|Park|Club|Depot|Cab|Grandstand|International|Corporate/.test(o.name || '')) ? 'office:' + seed0 : 'flat:' + seed0, name: o.name === 'Residence' ? 'Residence' : o.name };
+    }
     const b = { x, y, w, h, seed: (x * 73 + y * 151) | 0, ...o };
     const spr = buildingSprite(b);
     b.img = spr.img; b.rise = spr.rise;

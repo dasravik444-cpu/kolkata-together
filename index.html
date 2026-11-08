@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Kolkata Together</title>
   <meta name="theme-color" content="#1d1a24">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
@@ -42,7 +46,7 @@
   </div>
 
   <!-- dialogue box -->
-  <div id="dialog" class="hidden"><div id="dialog-name"></div><div id="dialog-text"></div><div id="dialog-next">▼</div></div>
+  <div id="dialog" class="hidden"><div id="dialog-name"></div><div id="dialog-text"></div><div id="dialog-next">tap to skip</div></div>
 
   <!-- chat -->
   <div id="chat" class="panel hidden">
@@ -81,10 +85,11 @@
   <!-- touch controls -->
   <div id="touch" class="hidden">
     <div id="stick"><div id="knob"></div></div>
-    <div id="tbtns"><button data-k="e">E</button><button data-k="f">F</button><button data-k="space">⚡</button><button data-k="shift">Run</button></div>
+    <div id="tbtns"><button data-k="e" class="abtn">A</button><button data-k="f" class="bbtn">B</button><button data-k="space">⚡</button><button data-k="shift">Run</button></div>
   </div>
 
   <script src="vendor/peerjs.min.js"></script>
   <script type="module" src="js3d/game3d.js"></script>
+  <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
 </body>
 </html>

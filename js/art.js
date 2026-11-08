@@ -419,7 +419,7 @@ export function carSprite(type) {
 /* ============================ ANIMALS ============================ */
 // Side-view sprites facing LEFT, 2 frames each.
 export const ANIMALS = {
-  dog: { w: 16, h: 12, speed: 40 }, dog2: { w: 16, h: 12, speed: 40 }, cow: { w: 26, h: 18, speed: 10 }, horse: { w: 26, h: 22, speed: 30 },
+  dog: { w: 16, h: 12, speed: 40 }, dog2: { w: 16, h: 12, speed: 40 }, cat: { w: 12, h: 10, speed: 30 }, cat2: { w: 12, h: 10, speed: 30 }, cow: { w: 26, h: 18, speed: 10 }, horse: { w: 26, h: 22, speed: 30 },
   monkey: { w: 12, h: 12, speed: 45 }, goat: { w: 16, h: 13, speed: 20 }, crow: { w: 10, h: 8, speed: 30 },
   tiger: { w: 28, h: 16, speed: 25 }, elephant: { w: 36, h: 30, speed: 10 }, giraffe: { w: 26, h: 40, speed: 12 },
   zebra: { w: 26, h: 20, speed: 18 }, rhino: { w: 30, h: 20, speed: 10 }, deer: { w: 20, h: 18, speed: 25 },
@@ -442,6 +442,7 @@ export function animalSprite(kind, frame) {
   };
   switch (kind) {
     case 'dog': case 'dog2': quad(kind === 'dog' ? '#b07a45' : '#2a2620', kind === 'dog' ? '#c48a52' : '#3a342c', kind === 'dog' ? '#9a6a3a' : '#1d1a16', 16, 12, () => { px(g, 13, 3, 3, 2, kind === 'dog' ? '#b07a45' : '#2a2620'); px(g, 2, 1, 2, 2, '#7a4a2a'); }); break;
+    case 'cat': case 'cat2': quad(kind === 'cat' ? '#e0903a' : '#8a8a90', kind === 'cat' ? '#e8a050' : '#9a9aa0', kind === 'cat' ? '#c87a2a' : '#6a6a70', 12, 10, () => { px(g, 10, 1, 1, 5, kind === 'cat' ? '#e0903a' : '#8a8a90'); px(g, 11, 0, 1, 2, kind === 'cat' ? '#e0903a' : '#8a8a90'); px(g, 1, 1, 1, 2, '#3a2a1a'); px(g, 3, 1, 1, 2, '#3a2a1a'); }); break;
     case 'cow': quad('#f2efe8', '#e8e4dc', '#d8d4cc', 26, 18, () => { ell(g, 12, 6, 4, 3, '#e8e4dc'); px(g, 2, 2, 1, 3, '#c9b48a'); px(g, 5, 2, 1, 3, '#c9b48a'); px(g, 24, 7, 2, 6, '#d8d4cc'); }); break;
     case 'horse': quad('#8a5a32', '#7a4a2a', '#6a3e22', 26, 22, () => { px(g, 3, 1, 4, 8, '#7a4a2a'); px(g, 6, 2, 3, 6, '#2a1a10'); px(g, 24, 8, 2, 8, '#2a1a10'); }); break;
     case 'goat': quad('#f2f2f2', '#e8e8e8', '#c9c9c9', 16, 13, () => { px(g, 1, 0, 1, 3, '#8a8a8a'); px(g, 1, 7, 1, 2, '#e8e8e8'); }); break;

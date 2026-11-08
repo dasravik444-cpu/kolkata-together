@@ -175,3 +175,16 @@ canvas#game.three { image-rendering: auto; }
 #lob-portrait { width: 192px; height: 288px; image-rendering: auto; }
 .preview canvas { image-rendering: auto; }
 @media (max-width: 640px) { #radar { width: 120px; height: 120px; left: 10px; bottom: 190px; } }
+
+#tbtns .abtn { background: #3ab84a; color: #fff; font-weight: 700; font-size: 22px; }
+#tbtns .bbtn { background: #d84a4a; color: #fff; font-weight: 700; font-size: 22px; }
+#dialog-next { font-size: 12px; }
+
+/* action menu shown when you press A next to someone */
+#actmenu { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); z-index: 28; background: rgba(20,18,28,.88); border: 3px solid #fff; border-radius: 18px; padding: 8px 10px 10px; box-shadow: 0 6px 20px rgba(0,0,0,.5); animation: pop .15s ease-out; max-width: 96vw; }
+#actmenu .am-title { color: #ffd94a; font-weight: 700; text-align: center; margin-bottom: 6px; font-size: 15px; }
+#actmenu .am-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+#actmenu button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 72px; padding: 8px 6px; border-radius: 14px; font-size: 13px; position: relative; touch-action: manipulation; }
+#actmenu button i { font-style: normal; font-size: 26px; line-height: 1; }
+#actmenu button b { position: absolute; top: 3px; right: 6px; font-size: 11px; opacity: .6; }
+@media (max-width: 640px) { #actmenu { bottom: 250px; } #actmenu button { min-width: 62px; } }
