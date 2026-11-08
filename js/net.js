@@ -67,12 +67,30 @@ export class Net {
   bind(c) {
     this.conn = c;
     c.on('open', () => { this.setStatus('connected'); this.emit('connected', this.role); });
-    c.on('data', (m) => { if (m && m.t === 'full') { this.setStatus('this game already has two players'); c.close(); this.peer.destroy(); this.full = true; return; } this.emit('msg', m); });
+    c.on('data', (m) => { if (m && m.t === '_part') { m = this._part(m); if (!m) return; } if (m && m.t === 'full') { this.setStatus('this game already has two players'); c.close(); this.peer.destroy(); this.full = true; return; } this.emit('msg', m); });
     c.on('close', () => { this.emit('disconnected'); this.conn = null; this.endCall(); if (!this.full) { this.setStatus(this.role === 'host' ? 'waiting for your partner…' : 'partner disconnected — retrying…'); if (this.role === 'guest') this.scheduleRetry(true); } });
     c.on('error', () => { /* handled by close */ });
   }
   get connected() { return !!(this.conn && this.conn.open); }
-  send(m) { if (this.connected) { try { this.conn.send(m); } catch (_) { /* */ } } }
+  send(m) {
+    if (!this.connected) return;
+    try {
+      const str = JSON.stringify(m);
+      if (str.length <= 14000) { this.conn.send(m); return; }
+      // the data channel silently drops big messages, so split them into parts
+      const id = Math.random().toString(36).slice(2), n = Math.ceil(str.length / 12000);
+      for (let i = 0; i < n; i++) this.conn.send({ t: '_part', id, i, n, d: str.slice(i * 12000, (i + 1) * 12000) });
+    } catch (_) { /* */ }
+  }
+  _part(m) {
+    this.parts = this.parts || {};
+    if (typeof m.d !== 'string' || !(m.n > 0 && m.n < 200) || !(m.i >= 0 && m.i < m.n)) return null;
+    const p = this.parts[m.id] || (this.parts[m.id] = { got: 0, list: new Array(m.n) });
+    if (!p.list[m.i]) { p.list[m.i] = m.d; p.got++; }
+    if (p.got < m.n) return null;
+    delete this.parts[m.id];
+    try { return JSON.parse(p.list.join('')); } catch (_) { return null; }
+  }
 
   /* ---------- voice ---------- */
   async getMic() {

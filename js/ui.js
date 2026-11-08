@@ -20,11 +20,11 @@ export function init(game, api) {
   const name = $('lob-name'), code = $('lob-code');
   name.value = load('name', ''); code.value = load('code', '');
   const chars = $('lob-chars');
-  const draw = () => { if (API.preview3d) { const prof0 = load('profile', null); API.preview3d($('lob-portrait'), prof0 && prof0.preset === preset ? prof0.app : PRESETS[preset]); return; } const c = $('lob-portrait').getContext('2d'); c.imageSmoothingEnabled = false; c.clearRect(0, 0, 96, 144); const prof = load('profile', null); c.drawImage(portrait(prof && prof.preset === preset ? prof.app : PRESETS[preset]), 0, 0); };
+  const draw = () => { if (API.preview3d) { const prof0 = load('profile', null); const base = prof0 && prof0.preset === preset ? prof0.app : PRESETS[preset]; API.preview3d($('lob-portrait'), API.decorate ? API.decorate(base) : base); return; } const c = $('lob-portrait').getContext('2d'); c.imageSmoothingEnabled = false; c.clearRect(0, 0, 96, 144); const prof = load('profile', null); c.drawImage(portrait(prof && prof.preset === preset ? prof.app : PRESETS[preset]), 0, 0); };
   chars.innerHTML = '<button data-p="him">He (brown skin, glasses)</button><button data-p="her">She (fair, mustard kurta)</button>';
   const sel = () => { chars.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.p === preset)); draw(); };
   chars.onclick = (e) => { const b = e.target.closest('button'); if (b) { preset = b.dataset.p; sel(); } };
-  sel();
+  sel(); setTimeout(draw, 700);
   const go = (online) => {
     if (online && code.value.trim().length < 4) { code.focus(); code.placeholder = 'Pick a code with at least 4 characters'; return; }
     save('name', name.value.trim()); save('code', code.value.trim()); save('preset', preset);
@@ -32,6 +32,7 @@ export function init(game, api) {
     if ('ontouchstart' in window || navigator.maxTouchPoints > 0) $('touch').classList.remove('hidden');
     API.startGame({ name: name.value.trim() || (preset === 'him' ? 'Him' : 'Her'), preset, code: code.value.trim(), online });
   };
+  const fb = $('lob-face'); if (fb) { if (!API.setFace) fb.remove(); else fb.onclick = () => faceEditor(draw); }
   $('lob-online').onclick = () => go(true);
   $('lob-solo').onclick = () => go(false);
   const q = new URLSearchParams(location.search);
@@ -181,7 +182,7 @@ export function callState(s) {
 const APPS = [
   ['messages', '💬', 'Messages', '#3aa84a'], ['call', '📞', 'Call', '#2a8a3a'], ['cab', '🚕', 'Jatri Cab', '#f2c230'], ['reserve', '🍽', 'Reserve', '#e8603c'],
   ['map', '🗺', 'Map', '#2a6ac0'], ['bank', '🏦', 'Bank', '#2a4a8a'], ['camera', '📷', 'Camera', '#5a5a62'], ['gallery', '🖼', 'Gallery', '#8a3ab0'],
-  ['garage', '🏎', 'Garage', '#d42a2a'], ['tag', '🏃', 'Tag game', '#c0306a'], ['music', '🎵', 'Music', '#e05a8a'], ['help', '❔', 'Help', '#6b6676'], ['settings', '⚙', 'Graphics', '#3a3a48'],
+  ['garage', '🏎', 'Garage', '#d42a2a'], ['tag', '🏃', 'Tag game', '#c0306a'], ['music', '🎵', 'Music', '#e05a8a'], ['help', '❔', 'Help', '#6b6676'], ['settings', '⚙', 'Graphics', '#3a3a48'], ['face', '📸', 'My face', '#c0306a'],
 ];
 export function phone(app) {
   const h = Math.floor(G.time / 60), m = Math.floor(G.time % 60);
@@ -202,6 +203,7 @@ export function phone(app) {
     case 'call': closeModal(); toggleCall(); break;
     case 'camera': closeModal(); selfie(); break;
     case 'help': closeModal(); help(); break;
+    case 'face': if (!API.setFace) { toast('Face photos are for the 3D version.'); break; } faceEditor(); break;
     case 'settings': {
       if (!API.setQuality) { toast('Graphics settings are for the 3D version.'); break; }
       const cur = load('quality', 'auto');
@@ -303,6 +305,45 @@ export function help() {
   <p class="note">Crime raises your wanted stars. Lose the cops or pay a fine at a police station. Get knocked out and you wake up at SSKM.</p></div><div class="m-foot"><button data-x class="primary">Got it</button></div>`);
 }
 
+/* ============================== my face (photo) ============================== */
+export function faceEditor(after) {
+  let img = null, zoom = 1, rot = 0, ox = 0, oy = 0;
+  const has = !!load('face', null);
+  modal(head('📸 My face', 'Put your real face on your 3D character') + `<div class="m-body"><div class="split"><div>
+    <div style="position:relative;width:300px;max-width:100%;margin:auto"><canvas id="fe-cv" width="300" height="400" style="width:100%;border:3px solid var(--line);border-radius:12px;background:#222;touch-action:none;cursor:grab"></canvas></div>
+    <div class="row"><label>Zoom</label><input id="fe-z" type="range" min="0.3" max="4" step="0.01" value="1" style="width:160px"></div>
+    <div class="row"><label>Tilt</label><input id="fe-r" type="range" min="-30" max="30" step="0.5" value="0" style="width:160px"></div></div>
+    <div><p><b>1.</b> Choose a clear, front-facing photo of <b>your own</b> face (good light, looking at the camera).</p>
+    <input id="fe-file" type="file" accept="image/*">
+    <p><b>2.</b> Drag the photo and use Zoom / Tilt so your face fills the oval: <b>eyebrows near the top, chin at the bottom, cheeks touching the sides</b>.</p>
+    <label style="display:block;margin:8px 0"><input id="fe-gl" type="checkbox" checked style="width:auto"> My photo already shows my glasses (don't add 3D glasses)</label>
+    <label style="display:block;margin:8px 0"><input id="fe-sk" type="checkbox" checked style="width:auto"> Match my body skin tone to the photo</label>
+    <p class="note">🔒 Your photo is saved only in this browser and sent directly to your partner over your private connection. It is never uploaded to the website.</p></div></div></div>
+    <div class="m-foot">${has ? '<button id="fe-del" class="danger">Remove my face photo</button>' : ''}<button data-x>Cancel</button><button id="fe-ok" class="primary" disabled>Use this face</button></div>`, { head: '#c0306a' });
+  const c = $('fe-cv'), g = c.getContext('2d');
+  const draw = (guide = true) => {
+    g.fillStyle = '#2a2830'; g.fillRect(0, 0, 300, 400);
+    if (img) { g.save(); g.translate(150 + ox, 200 + oy); g.rotate(rot * Math.PI / 180); const sc = zoom * Math.max(300 / img.width, 400 / img.height); g.drawImage(img, -img.width * sc / 2, -img.height * sc / 2, img.width * sc, img.height * sc); g.restore(); }
+    else { g.fillStyle = '#aaa'; g.font = '16px sans-serif'; g.textAlign = 'center'; g.fillText('Choose a photo →', 150, 200); g.textAlign = 'left'; }
+    if (guide) { g.save(); g.fillStyle = 'rgba(0,0,0,0.45)'; g.beginPath(); g.rect(0, 0, 300, 400); g.ellipse(150, 200, 138, 188, 0, 0, Math.PI * 2, true); g.fill('evenodd'); g.strokeStyle = '#ffd94a'; g.lineWidth = 3; g.setLineDash([8, 6]); g.beginPath(); g.ellipse(150, 200, 138, 188, 0, 0, 7); g.stroke(); g.setLineDash([]); g.strokeStyle = 'rgba(255,217,74,0.6)'; g.lineWidth = 1; g.beginPath(); g.moveTo(40, 140); g.lineTo(260, 140); g.stroke(); g.fillStyle = '#ffd94a'; g.font = '12px sans-serif'; g.fillText('eyes about here', 106, 134); g.restore(); }
+  };
+  draw();
+  $('fe-file').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { const im = new Image(); im.onload = () => { img = im; zoom = 1; rot = 0; ox = oy = 0; $('fe-z').value = 1; $('fe-r').value = 0; $('fe-ok').disabled = false; draw(); }; im.src = r.result; }; r.readAsDataURL(f); };
+  $('fe-z').oninput = (e) => { zoom = +e.target.value; draw(); };
+  $('fe-r').oninput = (e) => { rot = +e.target.value; draw(); };
+  let drag = null;
+  c.onpointerdown = (e) => { drag = { x: e.clientX, y: e.clientY }; c.setPointerCapture(e.pointerId); };
+  c.onpointermove = (e) => { if (!drag) return; const k = 300 / c.getBoundingClientRect().width; ox += (e.clientX - drag.x) * k; oy += (e.clientY - drag.y) * k; drag = { x: e.clientX, y: e.clientY }; draw(); };
+  c.onpointerup = () => (drag = null);
+  c.onwheel = (e) => { e.preventDefault(); zoom = clamp(zoom * (e.deltaY < 0 ? 1.06 : 0.94), 0.3, 4); $('fe-z').value = zoom; draw(); };
+  $('fe-ok').onclick = async () => {
+    draw(false); const out = c.toDataURL('image/jpeg', 0.86);
+    await API.setFace(out, { glasses: $('fe-gl').checked, skin: $('fe-sk').checked });
+    toast('Face saved! Looking good 😎'); closeModal(); if (after) after();
+  };
+  const del = $('fe-del'); if (del) del.onclick = () => { API.setFace(null); toast('Face photo removed.'); closeModal(); if (after) after(); };
+}
+
 /* ============================== shops / wardrobe / salon ============================== */
 const SLOT_NAMES = { top: 'Tops & outfits', bottom: 'Bottoms', shoes: 'Shoes', glasses: 'Glasses & sunglasses', hat: 'Hats', earrings: 'Earrings' };
 function previewHTML() { return '<div class="preview"><div class="floor"></div><canvas id="pv" width="96" height="144" style="position:relative"></canvas></div>'; }
@@ -333,9 +374,9 @@ export function shop(shopKey, wardrobeMode = false) {
 }
 function bodyHTML(a) {
   const sw = (key, list) => `<div class="swatches">${list.map((c) => `<button data-k="${key}" data-v="${c}" class="${a[key] === c ? 'on' : ''}" style="background:${c === 'none' ? 'repeating-linear-gradient(45deg,#fff 0 4px,#ccc 4px 8px)' : c}"></button>`).join('')}</div>`;
-  return `<h3>Skin tone</h3>${sw('skin', SKIN_TONES)}<h3>Eye colour</h3>${sw('eyes', EYE_COLORS)}<p class="note">Hair, makeup and nails are done at the salon.</p>`;
+  return `${API.setFace ? '<h3>Your real face</h3><button id="body-face" class="primary">📸 Add / change my face photo</button>' : ''}<h3>Skin tone</h3>${sw('skin', SKIN_TONES)}<h3>Eye colour</h3>${sw('eyes', EYE_COLORS)}<p class="note">Hair, makeup and nails are done at the salon.</p>`;
 }
-function bindBody(box, app, rerender) { box.querySelectorAll('[data-k]').forEach((b) => (b.onclick = () => { app[b.dataset.k] = b.dataset.v === 'true' ? true : b.dataset.v === 'false' ? false : b.dataset.v; sfx.click(); rerender(); })); }
+function bindBody(box, app, rerender) { const bf = box.querySelector('#body-face'); if (bf) bf.onclick = () => faceEditor(); box.querySelectorAll('[data-k]').forEach((b) => (b.onclick = () => { app[b.dataset.k] = b.dataset.v === 'true' ? true : b.dataset.v === 'false' ? false : b.dataset.v; sfx.click(); rerender(); })); }
 export function wardrobe() { shop(null, true); }
 
 export function salon() {
@@ -441,7 +482,7 @@ export function selfie() {
     g.strokeStyle = '#fff'; g.lineWidth = 4; g.beginPath(); g.arc(c.width / 2, c.height - 20, 12, 0, 7); g.stroke();
   } else selfieScene(c, { place: placeFor(), people, label, stamp, night: API.darkness() > 0.3 });
   $('sf-save').onclick = () => download(c, label);
-  $('sf-send').onclick = () => { sendChat('📷 ' + label, c.toDataURL('image/png')); toast('Photo sent 💌'); };
+  $('sf-send').onclick = () => { const sm = canvas(Math.min(640, c.width), Math.round(Math.min(640, c.width) * c.height / c.width)); sm.getContext('2d').drawImage(c, 0, 0, sm.width, sm.height); sendChat('📷 ' + label, sm.toDataURL('image/jpeg', 0.8)); toast('Photo sent 💌'); };
   $('sf-keep').onclick = () => { keep(c); toast('Saved to gallery'); };
 }
 function keep(c) { const ph = load('photos', []); ph.unshift(c.toDataURL('image/png')); save('photos', ph.slice(0, 12)); }

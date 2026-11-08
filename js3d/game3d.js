@@ -12,6 +12,27 @@ import { sfx, unlockAudio } from '../js/audio.js';
 import * as UI from '../js/ui.js';
 import { View, preview3d } from './render3d.js';
 import { M } from './models.js';
+import { registerFace, FACES } from './textures.js';
+
+/* ---------- my face photo (stored only in this browser, shared peer-to-peer) ---------- */
+let myFace = null;
+const faceReady = (async () => { const f = load('face', null); if (f && f.data) { try { const id = await registerFace(f.data); myFace = { id, data: f.data, opts: f.opts || {} }; } catch (e) { /* bad image */ } } })();
+function applyFace(app) { if (!myFace) { delete app.faceId; app.photoGlasses = false; return app; } app.faceId = myFace.id; if (myFace.opts.skin) app.skin = FACES[myFace.id].skin; app.photoGlasses = !!myFace.opts.glasses; return app; }
+function decorate(app) { return applyFace({ ...app }); }
+// large messages are dropped by the data channel, so photos travel in 12 KB chunks
+function sendFace() { if (!myFace || !G.net.connected) return; const d = myFace.data, n = Math.ceil(d.length / 12000); for (let i = 0; i < n; i++) G.net.send({ t: 'faceChunk', id: myFace.id, i, n, d: d.slice(i * 12000, (i + 1) * 12000) }); }
+const faceParts = {};
+function askFace(look) { if (look && look.faceId && !FACES[look.faceId]) setTimeout(() => { if (!FACES[look.faceId]) G.net.send({ t: 'needFace' }); }, 6000); }
+function onFaceChunk(m) {
+  if (typeof m.d !== 'string' || !(m.n > 0 && m.n < 40) || !(m.i >= 0 && m.i < m.n)) return;
+  const p = faceParts[m.id] || (faceParts[m.id] = { got: 0, parts: new Array(m.n) });
+  if (!p.parts[m.i]) { p.parts[m.i] = m.d; p.got++; }
+  if (p.got === m.n) { const data = p.parts.join(''); delete faceParts[m.id]; if (data.startsWith('data:image/') && data.length < 400000) registerFace(data).catch(() => {}); }
+}
+async function setFace(data, opts = {}) {
+  if (!data) { save('face', null); myFace = null; } else { const id = await registerFace(data); myFace = { id, data, opts }; save('face', { data, opts }); }
+  if (G.profile) { applyFace(G.profile.app); refreshLook(); sendFace(); }
+}
 
 const cv = document.getElementById('game');
 let VW = 700, VH = 700; let view = null;
@@ -550,6 +571,7 @@ function hookNet() {
   net.on('status', (s) => UI.netStatus(s));
   net.on('connected', () => {
     G.online = true;
+    sendFace();
     net.send({ t: 'hello', name: G.profile.name, look: G.profile.app, time: G.time, tables: G.tableFoods });
     sendState(true);
     UI.sysMsg('Connected! You can now chat, call and play together.'); sfx.good();
@@ -561,7 +583,7 @@ function hookNet() {
     switch (m.t) {
       case 'hello':
         G.other = G.other || { x: G.me.x, y: G.me.y, tx: G.me.x, ty: G.me.y, dir: 'down', state: 'walk', scene: 'world' };
-        G.other.name = m.name; G.other.look = m.look;
+        G.other.name = m.name; G.other.look = m.look; askFace(m.look);
         if (net.role === 'guest') G.time = m.time;
         if (m.tables) Object.assign(G.tableFoods, m.tables);
         UI.toast(`${m.name} is online in Kolkata! 💛`); UI.setPartner(m.name);
@@ -574,7 +596,9 @@ function hookNet() {
         if (o.x === undefined || isNaN(o.x)) { o.x = m.x; o.y = m.y; }
         break;
       }
-      case 'look': if (G.other) G.other.look = m.look; break;
+      case 'look': if (G.other) G.other.look = m.look; askFace(m.look); break;
+      case 'faceChunk': onFaceChunk(m); break;
+      case 'needFace': sendFace(); break;
       case 'chat': UI.chatMsg(m.text, 'them', m.img); sfx.msg(); break;
       case 'time': G.time = m.time; break;
       case 'food': G.tableFoods[m.key] = m.foods; UI.refreshDining(); break;
@@ -675,6 +699,7 @@ export async function startGame({ name, preset, code, online }) {
   let p = load('profile', null);
   if (!p || p.preset !== preset) p = DEFAULT_PROFILE(preset, name);
   p.name = name || p.name || (preset === 'him' ? 'Him' : 'Her');
+  await faceReady; applyFace(p.app);
   G.profile = p; saveProfile();
   makeMe();
   UI.loading(true);
@@ -693,6 +718,6 @@ export async function startGame({ name, preset, code, online }) {
   else UI.netStatus('solo');
   UI.toast(`Welcome to Kolkata, ${p.name}! Press H for controls.`);
 }
-UI.init(G, { preview3d, selfie3d: (people) => view.selfie(G, people), setQuality, startGame, standUp, placeOrder, bookCab, refreshLook, saveProfile, sitAt, teleport, exitCar, goToInterior, sceneId, virtualKey, touchDir, DESTINATIONS, darkness });
+UI.init(G, { setFace, decorate, preview3d, selfie3d: (people) => view.selfie(G, people), setQuality, startGame, standUp, placeOrder, bookCab, refreshLook, saveProfile, sitAt, teleport, exitCar, goToInterior, sceneId, virtualKey, touchDir, DESTINATIONS, darkness });
 window.__dbg = { goToInterior, sitAt, placeOrder, teleport, bookCab, get view() { return view; } };
 requestAnimationFrame(loop);

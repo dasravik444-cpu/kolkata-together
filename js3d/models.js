@@ -4,7 +4,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { ITEM } from '../js/data.js';
 import { mulberry, shade } from '../js/util.js';
-import { faceTexture, pattern, barkTexture, signTexture } from './textures.js';
+import { faceTexture, photoFaceTexture, strandTexture, FACE, pattern, barkTexture, signTexture } from './textures.js';
 
 export const M = 0.125; // metres per sim pixel (16 px tile = 2 m)
 const matCache = new Map();
@@ -41,7 +41,28 @@ function bodyGeo(kind, gender, o = {}) {
   g.computeVertexNormals();
   return (shaped[k] = g);
 }
-G.upper.translate(0, -0.13, 0); G.fore.translate(0, -0.12, 0); G.thigh.translate(0, -0.2, 0); G.shin.translate(0, -0.2, 0); G.torso.translate(0, 0.3, 0);
+G.torso.translate(0, 0.3, 0);
+// sculpted, tapered limbs (shoulder/bicep/wrist, thigh/calf/ankle) — pivots at the top joint
+const limb = (pts, sz = 0.86) => { const g = lathe(pts, 18); g.scale(1, 1, sz); g.computeVertexNormals(); return g; };
+const LIMBS = {
+  m: { upper: limb([[0.001, 0.03], [0.05, 0.01], [0.057, -0.05], [0.054, -0.12], [0.046, -0.22], [0.041, -0.28], [0.001, -0.3]]), fore: limb([[0.001, 0.02], [0.042, 0.0], [0.047, -0.05], [0.043, -0.13], [0.033, -0.23], [0.029, -0.255], [0.001, -0.265]]),
+       thigh: limb([[0.001, 0.04], [0.082, 0.01], [0.09, -0.06], [0.083, -0.2], [0.068, -0.36], [0.056, -0.44], [0.001, -0.46]], 0.92), shin: limb([[0.001, 0.02], [0.055, 0.0], [0.061, -0.08], [0.062, -0.14], [0.05, -0.27], [0.036, -0.4], [0.034, -0.44], [0.001, -0.455]], 0.92) },
+  f: { upper: limb([[0.001, 0.03], [0.045, 0.01], [0.05, -0.05], [0.047, -0.13], [0.04, -0.22], [0.035, -0.27], [0.001, -0.29]]), fore: limb([[0.001, 0.02], [0.037, 0.0], [0.04, -0.05], [0.036, -0.13], [0.028, -0.22], [0.025, -0.25], [0.001, -0.26]]),
+       thigh: limb([[0.001, 0.04], [0.088, 0.01], [0.094, -0.06], [0.085, -0.2], [0.066, -0.36], [0.052, -0.43], [0.001, -0.45]], 0.92), shin: limb([[0.001, 0.02], [0.05, 0.0], [0.056, -0.08], [0.057, -0.14], [0.045, -0.27], [0.032, -0.39], [0.03, -0.43], [0.001, -0.445]], 0.92) },
+};
+// hand with four fingers and a thumb (single merged mesh), hanging down
+function handGeo(f) {
+  const k = 0.92 * (f ? 0.9 : 1), parts = [];
+  const palm = new RoundedBoxGeometry(0.075 * k, 0.085 * k, 0.03 * k, 2, 0.012); palm.translate(0, -0.045 * k, 0); parts.push(palm);
+  for (let i = 0; i < 4; i++) { const fl = (i === 0 || i === 3 ? 0.052 : 0.062) * k; const fg = new THREE.CapsuleGeometry(0.0085 * k, fl, 3, 6); fg.translate((-0.026 + i * 0.0175) * k, -0.09 * k - fl / 2, 0.002); fg.rotateX(-0.12); parts.push(fg); }
+  const th = new THREE.CapsuleGeometry(0.01 * k, 0.04 * k, 3, 6); th.rotateZ(0.6); th.translate(0.042 * k, -0.06 * k, 0.012); parts.push(th);
+  return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
+}
+const HANDS = { m: handGeo(false), f: handGeo(true) };
+// shoe tapered towards the toe
+function shoeGeo(w, h, l) { const g = new RoundedBoxGeometry(w, h, l, 3, Math.min(w, h) * 0.4); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const z = p.getZ(i) / (l / 2); const t = z > 0 ? 1 - z * 0.35 : 1; p.setX(i, p.getX(i) * t); if (z > 0.5) p.setY(i, p.getY(i) * (1 - (z - 0.5) * 0.4) - (z - 0.5) * 0.01); } g.computeVertexNormals(); return g; }
+const SHOES = { formal: shoeGeo(0.1, 0.075, 0.27), sneaker: shoeGeo(0.108, 0.085, 0.27), heel: shoeGeo(0.08, 0.06, 0.22), flat: shoeGeo(0.09, 0.05, 0.25) };
+const NECK = (() => { const g = lathe([[0.062, -0.04], [0.052, 0.0], [0.047, 0.06], [0.049, 0.12]], 16); g.computeVertexNormals(); return g; })();
 
 function clothMat(top, part) {
   const s = top.style, c0 = top.c[0] || '#888', c1 = top.c[1] || c0, c2 = top.c[2] || c0;
@@ -60,13 +81,14 @@ function clothMat(top, part) {
 export class Human {
   constructor(app) { this.root = new THREE.Group(); this.phase = Math.random() * 6; this.t = 0; this.setLook(app); }
   setLook(app) {
-    if (this.key === JSON.stringify(app)) return;
-    this.key = JSON.stringify(app); this.app = app;
+    if (this.key === JSON.stringify(app) + FACE.ver) return;
+    this.key = JSON.stringify(app) + FACE.ver; this.app = app;
     const R = this.root; while (R.children.length) R.remove(R.children[0]);
     const f = app.gender === 'f'; const H = f ? 1.69 : 1.75; const s = H / 1.75;
     const sw = f ? 0.92 : 1; // shoulder width factor
     const top = it(app.top), bot = it(app.bottom), sho = it(app.shoes), gl = it(app.glasses), hat = it(app.hat), ear = it(app.earrings);
-    const skin = new THREE.MeshStandardMaterial({ color: app.skin, roughness: 0.6, envMapIntensity: 0.4 });
+    const skin = new THREE.MeshPhysicalMaterial({ color: app.skin, roughness: 0.55, envMapIntensity: 0.35, sheen: 0.25, sheenColor: new THREE.Color('#ffd8c8'), sheenRoughness: 0.6 });
+    const gk2 = f ? 'f' : 'm';
     const shortSl = ['tee', 'jersey'].includes(top.style), noSl = ['dress', 'crop', 'swim'].includes(top.style);
     const full = top.style === 'saree' || top.style === 'dress';
     const legMat = ['shorts', 'skirt'].includes(bot.style) || top.style === 'dress' ? skin : bot.style === 'jeans' ? new THREE.MeshStandardMaterial({ map: pattern('denim', bot.c[0]), roughness: 0.9 }) : mat(bot.c[0] || '#333', { r: 0.8 });
@@ -112,27 +134,28 @@ export class Human {
     }
     if (top.style === 'hoodie') add(chest, new THREE.TorusGeometry(0.1, 0.04, 8, 16), mat(top.c[1]), 0, 0.56, -0.05).rotation.x = Math.PI / 2.4;
     // neck + head
-    add(chest, G.neck, skin, 0, 0.635, 0);
+    add(chest, NECK, skin, 0, 0.6, 0);
     const head = new THREE.Group(); head.position.set(0, 0.76, 0.01); chest.add(head); this.head = head;
-    const faceMat = new THREE.MeshStandardMaterial({ map: faceTexture(app), roughness: 0.6, envMapIntensity: 0.4 });
+    const photo = photoFaceTexture(app);
+    const faceMat = new THREE.MeshStandardMaterial({ map: photo || faceTexture(app), roughness: photo ? 0.7 : 0.6, envMapIntensity: 0.3 });
     add(head, bodyGeo('head', 'x'), faceMat, 0, 0, 0, 0.88, 1.0, 0.98);
     add(head, G.ear, skin, -0.09, 0.0, -0.005, 0.6, 1.3, 1); add(head, G.ear, skin, 0.09, 0.0, -0.005, 0.6, 1.3, 1);
-    add(head, new THREE.SphereGeometry(0.014, 8, 6), skin, 0, -0.012, 0.1, 0.9, 1.4, 1.1); // nose
-    buildHair(head, app, add);
-    if (gl.style !== 'none') buildGlasses(head, gl, add);
+    if (!photo) add(head, new THREE.SphereGeometry(0.014, 8, 6), skin, 0, -0.012, 0.1, 0.9, 1.4, 1.1); // nose (photo faces carry their own)
+    buildHair(head, app, add, !!photo);
+    if (gl.style !== 'none' && !(photo && app.photoGlasses)) buildGlasses(head, gl, add);
     if (hat.style !== 'none') buildHat(head, hat, add);
     if (ear.style !== 'none') for (const sx of [-1, 1]) { const em = mat(ear.c[0], { m: 1, r: 0.25 }); add(head, ear.style === 'hoops' ? new THREE.TorusGeometry(0.016, 0.003, 6, 12) : ear.style === 'studs' ? new THREE.SphereGeometry(0.007, 6, 6) : new THREE.ConeGeometry(0.011, 0.022, 10), em, sx * 0.092, ear.style === 'jhumka' ? -0.04 : -0.03, 0.0).rotation.x = ear.style === 'jhumka' ? Math.PI : 0; }
     // arms
     this.arms = [];
     for (const sx of [-1, 1]) {
       const sh = new THREE.Group(); sh.position.set(sx * 0.2 * sw, 0.53, 0); chest.add(sh);
-      add(sh, new THREE.SphereGeometry(0.062, 12, 10), noSl ? skin : clothMat(top, 'arm'), 0, -0.01, 0);
-      add(sh, G.upper, noSl ? skin : clothMat(top, 'arm'));
+      add(sh, new THREE.SphereGeometry(f ? 0.052 : 0.06, 14, 10), noSl ? skin : clothMat(top, 'arm'), 0, -0.005, 0, 1, 0.9, 0.95);
+      add(sh, LIMBS[gk2].upper, noSl ? skin : clothMat(top, 'arm'));
       const el = new THREE.Group(); el.position.y = -0.27; sh.add(el);
-      add(el, G.fore, noSl || shortSl ? skin : clothMat(top, 'arm'));
+      add(el, LIMBS[gk2].fore, noSl || shortSl ? skin : clothMat(top, 'arm'));
       if (top.style === 'waistcoat' || top.style === 'blazer') add(el, new THREE.CylinderGeometry(0.047, 0.047, 0.03, 10), mat('#f4f1ea'), 0, -0.22, 0);
-      const hand = add(el, G.hand, skin, 0, -0.27, 0, 0.9, 1.15, 0.7);
-      if (app.nails && app.nails !== 'none') add(hand, new THREE.SphereGeometry(0.02, 6, 4), mat(app.nails, { r: 0.2 }), 0, -0.04, 0.02, 1.4, 0.6, 0.8);
+      const hand = add(el, HANDS[gk2], skin, 0, -0.255, 0); hand.rotation.y = -sx * 0.25; hand.scale.x = sx;
+      if (app.nails && app.nails !== 'none') for (let i = 0; i < 4; i++) add(hand, new THREE.SphereGeometry(0.0075, 6, 4), mat(app.nails, { r: 0.15 }), -0.024 + i * 0.016, -0.135 - (i === 0 || i === 3 ? 0 : 0.008), 0.008, 1, 1.4, 0.6);
       sh.rotation.z = sx * 0.08;
       this.arms.push({ sh, el });
     }
@@ -140,13 +163,14 @@ export class Human {
     this.legs = [];
     for (const sx of [-1, 1]) {
       const hp = new THREE.Group(); hp.position.set(sx * 0.09, -0.02, 0); hips.add(hp);
-      add(hp, G.thigh, bot.style === 'shorts' || bot.style === 'skirt' ? skin : legMat);
+      add(hp, LIMBS[gk2].thigh, bot.style === 'shorts' || bot.style === 'skirt' ? skin : legMat);
       if (bot.style === 'shorts') add(hp, new THREE.CylinderGeometry(0.09, 0.085, 0.24, 12), mat(bot.c[0]), 0, -0.1, 0);
       const kn = new THREE.Group(); kn.position.y = -0.44; hp.add(kn);
       const pal = bot.style === 'palazzo' || bot.style === 'dhoti';
-      add(kn, pal ? new THREE.CylinderGeometry(0.075, 0.13, 0.42, 12) : G.shin, legMat, 0, pal ? -0.2 : 0);
+      add(kn, pal ? new THREE.CylinderGeometry(0.075, 0.13, 0.42, 12) : LIMBS[gk2].shin, legMat, 0, pal ? -0.2 : 0);
       const ft = new THREE.Group(); ft.position.y = -0.44; kn.add(ft);
-      add(ft, sho.style === 'heels' ? new RoundedBoxGeometry(0.08, 0.07, 0.2, 2, 0.025) : G.foot, sho.style === 'sandal' ? skin : shoeMat, 0, -0.02, 0.05);
+      add(ft, sho.style === 'heels' ? SHOES.heel : sho.style === 'sneaker' ? SHOES.sneaker : sho.style === 'jutti' || sho.style === 'sandal' ? SHOES.flat : SHOES.formal, sho.style === 'sandal' ? skin : shoeMat, 0, -0.025, 0.055);
+      if (sho.style === 'jutti') add(ft, new THREE.BoxGeometry(0.06, 0.004, 0.12), mat('#f0d488', { m: 0.6, r: 0.3 }), 0, 0.002, 0.07);
       if (sho.style === 'heels') add(ft, new THREE.BoxGeometry(0.02, 0.06, 0.02), shoeMat, 0, -0.06, -0.04);
       if (sho.style === 'sneaker') add(ft, new THREE.BoxGeometry(0.104, 0.025, 0.252), mat('#d8d8d8'), 0, -0.055, 0.05);
       if (sho.style === 'boots') add(ft, new THREE.CylinderGeometry(0.06, 0.06, 0.16, 10), shoeMat, 0, 0.05, 0);
@@ -207,11 +231,11 @@ export class Human {
     if (opt.wave) { A[1].sh.rotation.z = 2.6; A[1].el.rotation.z = 0.5 + Math.sin(this.t * 10) * 0.4; }
   }
 }
-function buildHair(head, app, add) {
-  const hm = new THREE.MeshStandardMaterial({ color: app.hairColor, roughness: 0.75, metalness: 0, envMapIntensity: 0.25 });
+function buildHair(head, app, add, photo) {
+  const hm = new THREE.MeshStandardMaterial({ map: strandTexture(app.hairColor), roughness: 0.6, metalness: 0, envMapIntensity: 0.15, side: THREE.DoubleSide });
   const h = app.hair;
   const capGeo = (lo) => new THREE.LatheGeometry([[0.106, lo], [0.109, 0.03], [0.106, 0.07], [0.092, 0.106], [0.062, 0.13], [0.001, 0.143]].map(([x, y]) => new THREE.Vector2(x, y)), 36);
-  const cap = (thetaLen, sc = 1.0) => { const m = add(head, capGeo(-0.02), hm, 0, 0.012, -0.006, 0.93 * sc, 1.0 * sc, 1.02 * sc); m.rotation.x = -0.42; m.material.side = THREE.DoubleSide; return m; };
+  const cap = (thetaLen, sc = 1.0) => { const m = add(head, capGeo(-0.02), hm, 0, 0.012, -0.006, 0.93 * sc, 1.0 * sc, 1.02 * sc); m.rotation.x = photo ? -0.62 : -0.42; m.material.side = THREE.DoubleSide; return m; };
   if (h === 'buzz') { cap(0.42, 1.0); return; }
   cap(0.44);
   // back of head coverage
@@ -221,11 +245,16 @@ function buildHair(head, app, add) {
     case 'curly': for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; add(head, new THREE.SphereGeometry(0.04, 10, 8), hm, Math.cos(a) * 0.08, 0.1 + Math.sin(i * 1.7) * 0.02, Math.sin(a) * 0.08); } break;
     case 'short': add(head, new THREE.SphereGeometry(0.1, 16, 10), hm, 0, 0.085, 0.01, 1.08, 0.45, 1.1); break;
     case 'long': case 'wavy': case 'braid': {
-      const back = add(head, new RoundedBoxGeometry(0.22, h === 'braid' ? 0.2 : 0.46, 0.06, 3, 0.028), hm, 0, h === 'braid' ? -0.08 : -0.19, -0.075);
-      back.rotation.x = 0.12;
-      for (const sx of [-1, 1]) add(head, new RoundedBoxGeometry(0.035, h === 'braid' ? 0.14 : 0.34, 0.07, 2, 0.015), hm, sx * 0.098, h === 'braid' ? -0.04 : -0.13, -0.025);
-      if (h === 'wavy') for (let k = 0; k < 5; k++) add(head, new THREE.SphereGeometry(0.045, 10, 8), hm, (k % 2 ? 1 : -1) * 0.11, -0.12 - k * 0.07, -0.07);
-      if (h === 'braid') for (let k = 0; k < 7; k++) add(head, new THREE.SphereGeometry(0.03, 8, 6), hm, -0.1 + (k % 2) * 0.01, -0.12 - k * 0.055, 0.06);
+      // long hair as a curtain wrapping the back and sides, falling past the shoulders, plus front locks
+      const len = h === 'braid' ? 0.22 : 0.5, sw2 = h === 'wavy' ? 1.12 : 1.0;
+      const curtain = lathe([[0.108, 0.07], [0.118, 0.02], [0.12, -0.06], [0.125 * sw2, -0.16], [0.135 * sw2, -0.28], [0.14 * sw2, -0.4], [0.13 * sw2, -len]], 28, Math.PI * 0.4, Math.PI * 1.2);
+      add(head, curtain, hm, 0, 0.0, -0.01, 0.98, 1, 0.95);
+      for (const sx of [-1, 1]) { // locks that fall in front of the shoulders (side part: one side fuller)
+        const lk = lathe([[0.03, 0.0], [0.038, -0.12], [0.045, -0.3], [0.036, -0.42], [0.001, -0.46]], 10); lk.scale(1, 1, 0.45);
+        const m = add(head, lk, hm, sx * 0.086, 0.0, 0.01, sx < 0 ? 0.85 : 0.7, h === 'braid' ? 0.45 : 0.85, 0.8); m.rotation.z = sx * 0.05; m.rotation.x = 0.08;
+      }
+      if (!photo) add(head, new THREE.SphereGeometry(0.06, 14, 10), hm, -0.035, 0.11, 0.045, 1.4, 0.45, 1.0).rotation.z = 0.3; // side-swept fringe
+      if (h === 'braid') for (let k = 0; k < 7; k++) add(head, new THREE.SphereGeometry(0.03, 8, 6), hm, -0.1 + (k % 2) * 0.01, -0.2 - k * 0.055, 0.07);
       break;
     }
     case 'ponytail': add(head, new THREE.CylinderGeometry(0.035, 0.02, 0.32, 10), hm, 0, -0.1, -0.14).rotation.x = 0.35; add(head, new THREE.TorusGeometry(0.03, 0.01, 6, 12), mat('#c0283a'), 0, 0.04, -0.12); break;

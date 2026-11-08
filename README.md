@@ -2,6 +2,17 @@
 
 A private two-player **3D** open-city game set in central Kolkata, in the style of a third-person open-world crime game. It runs in any modern browser on laptops and phones. The original 2D pixel-art version is still available at `classic.html`.
 
+## Put your real face on your character
+
+In the lobby, press **📸 Add my real face**. You can also do it later from **Phone → My face** or **Wardrobe → Body**.
+
+1. Choose a clear, front-facing photo of your own face, in good light, looking at the camera.
+2. Drag, zoom and tilt the photo so your face fills the oval: eyebrows near the top, chin at the bottom, cheeks touching the sides.
+3. Tick **"My photo already shows my glasses"** if you wear glasses in the photo, so the game doesn't add a second pair.
+4. Leave **"Match my body skin tone"** ticked, so your neck and hands match your face.
+
+**Privacy:** the photo is saved only in your own browser and sent directly to your partner over your private peer-to-peer connection. It is never put on the website or in this repository. Each of you adds your own face on your own device.
+
 ## The 3D version
 
 - **Engine:** real-time 3D (Three.js, vendored, so there's no CDN dependency).

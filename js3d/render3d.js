@@ -7,7 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { M, Human, SimpleHuman, buildVehicle, buildAnimal, animateAnimal, mat, VEH_SPEC } from './models.js';
 import { buildCity, buildInterior3D, heightAt, TS, GLOW_MAT } from './world3d.js';
-import { setAniso, pattern } from './textures.js';
+import { setAniso, pattern, FACE } from './textures.js';
 import { DIRS } from '../js/entities.js';
 
 const DIR_ANG = { down: 0, up: Math.PI, left: -Math.PI / 2, right: Math.PI / 2 };
@@ -143,7 +143,7 @@ export class View {
     }
     const human = (key, ent, look, full, state, opt) => {
       let v = this.vis.get(key);
-      const lk = JSON.stringify(look);
+      const lk = JSON.stringify(look) + FACE.ver;
       if (v && (v.full !== full || v.lk !== lk)) { if (v.full === full && full) { v.h.setLook(look); v.lk = lk; } else { this.scene.remove(v.h.root); v = null; } }
       if (!v) { const h = full ? new Human(look) : new SimpleHuman(look); this.scene.add(h.root); v = { h, full, lk, px: ent.x, py: ent.y }; this.vis.set(key, v); }
       live.add(key);

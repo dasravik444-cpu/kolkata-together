@@ -372,3 +372,55 @@ export function faceTexture(a) {
   const t = toTex(c, { repeat: false });
   return (facadeCache[key] = t);
 }
+
+/* ---------------------------- photo faces ---------------------------- */
+// Players can put their own face photo on their character. Photos live only in the
+// player's browser (localStorage) and are sent directly to the partner over WebRTC.
+export const FACES = {}; // id -> { canvas, skin }
+export const FACE = { ver: 0 };
+export function faceId(dataURL) { let h = 2166136261; for (let i = 0; i < dataURL.length; i += 7) { h ^= dataURL.charCodeAt(i); h = Math.imul(h, 16777619); } return 'f' + (h >>> 0).toString(36) + dataURL.length.toString(36); }
+export function registerFace(dataURL) {
+  const id = faceId(dataURL);
+  if (FACES[id]) return Promise.resolve(id);
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = cv(300, 400), g = c.getContext('2d'); g.drawImage(img, 0, 0, 300, 400);
+      // sample skin from both cheeks and the chin (avoids eyes, brows, lips, glasses)
+      const px = [[80, 250], [220, 250], [150, 345], [100, 300], [200, 300]].map(([x, y]) => g.getImageData(x - 8, y - 8, 16, 16).data);
+      let r = 0, gg = 0, b = 0, n = 0; for (const d of px) for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++; }
+      const hx = (v) => Math.round(v / n).toString(16).padStart(2, '0');
+      FACES[id] = { canvas: c, skin: '#' + hx(r) + hx(gg) + hx(b) }; FACE.ver++; res(id);
+    };
+    img.onerror = rej; img.src = dataURL;
+  });
+}
+const photoFaceCache = {};
+export function photoFaceTexture(a) {
+  const f = FACES[a.faceId]; if (!f) return null;
+  const key = a.faceId + a.skin; if (photoFaceCache[key]) return photoFaceCache[key];
+  const W = 512, H = 256, c = cv(W, H), g = c.getContext('2d');
+  const skin = a.skin || f.skin; g.fillStyle = skin; g.fillRect(0, 0, W, H);
+  // scalp in hair colour (top of head + back), so the hairline never shows bare skin
+  const hc = a.hairColor || '#1a1410'; const hg = g.createLinearGradient(0, 0, 0, H * 0.42); hg.addColorStop(0, hc); hg.addColorStop(0.75, hc); hg.addColorStop(1, skin);
+  g.fillStyle = hg; g.fillRect(0, 0, W, H * 0.42);
+  const bg = g.createLinearGradient(W * 0.25 + W * 0.17, 0, W * 0.25 + W * 0.3, 0); bg.addColorStop(0, 'rgba(0,0,0,0)'); bg.addColorStop(1, hc);
+  g.fillStyle = bg; g.fillRect(W * 0.42, 0, W * 0.66 - W * 0.42, H * 0.75); g.fillStyle = hc; g.fillRect(W * 0.55, 0, W * 0.4, H * 0.75);
+  const bg2 = g.createLinearGradient(W * 0.08, 0, W * 0.0, 0); bg2.addColorStop(0, 'rgba(0,0,0,0)'); bg2.addColorStop(1, hc); g.fillStyle = bg2; g.fillRect(0, 0, W * 0.08, H * 0.75); g.fillStyle = hc; g.fillRect(W * 0.94, 0, W * 0.06, H * 0.75);
+  // face photo placed on the front of the head (u = 0.25), feathered into the skin colour
+  const fw = W * 0.29, fh = H * 0.8, fx = W * 0.25 - fw / 2, fy = H * 0.2;
+  const tmp = cv(fw, fh), tg = tmp.getContext('2d'); tg.drawImage(f.canvas, 0, 0, fw, fh);
+  // soft, face-shaped (egg) mask so background around the jaw doesn't show
+  const mk = cv(fw, fh), mg = mk.getContext('2d'); mg.filter = 'blur(' + Math.round(fw * 0.05) + 'px)'; mg.fillStyle = '#000';
+  mg.beginPath(); mg.moveTo(fw * 0.5, fh * 0.04); mg.bezierCurveTo(fw * 0.98, fh * 0.04, fw * 0.95, fh * 0.62, fw * 0.5, fh * 0.96); mg.bezierCurveTo(fw * 0.05, fh * 0.62, fw * 0.02, fh * 0.04, fw * 0.5, fh * 0.04); mg.fill();
+  tg.globalCompositeOperation = 'destination-in'; tg.drawImage(mk, 0, 0);
+  g.drawImage(tmp, fx, fy);
+  return (photoFaceCache[key] = toTex(c, { repeat: false }));
+}
+export function strandTexture(col) {
+  const key = 'strand' + col; if (facadeCache[key]) return facadeCache[key];
+  const c = cv(256), g = c.getContext('2d'); g.fillStyle = col; g.fillRect(0, 0, 256, 256);
+  const r = mulberry(17);
+  for (let i = 0; i < 1400; i++) { const x = r() * 256, l = 30 + r() * 120, y = r() * 256; g.strokeStyle = r() < 0.5 ? shade(col, 0.08 + r() * 0.12) : shade(col, -0.35); g.globalAlpha = 0.35 + r() * 0.4; g.lineWidth = 0.8 + r(); g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + (r() - 0.5) * 8, y + l / 2, x + (r() - 0.5) * 6, y + l); g.stroke(); }
+  g.globalAlpha = 1; return (facadeCache[key] = toTex(c));
+}
