@@ -65,12 +65,14 @@ const OUTFIT = {
 };
 const SHOES = { formal: 'shoes03', sneaker: 'shoes06', heels: 'shoes04', boots: 'shoes02', jutti: 'shoes01', sandal: 'shoes01' };
 const HAIR = { swept: 'short04', short: 'short01', buzz: 'short02', curly: 'afro01', long: 'long01', ponytail: 'ponytail01', bun: 'bob02', bob: 'bob01', braid: 'braid01', wavy: 'long01' };
-export function lookParts(app, items) {
+const LIGHT = { male_elegantsuit01: 'male_worksuit01', bob01: 'bob02', braid01: 'long01', ponytail01: 'long01', short01: 'short04' };
+export function lookParts(app, items, lo) {
   const ck = app.gender === 'f' ? 'f' : 'm';
   const top = items(app.top), bot = items(app.bottom), sho = items(app.shoes);
   const outfit = app.outfit || OUTFIT[ck][top.style] || OUTFIT[ck].tee;
   const shoes = SHOES[sho.style] || 'shoes06';
   const hair = HAIR[app.hair] || (ck === 'f' ? 'long01' : 'short02');
+  if (lo) return { ck, outfit: LIGHT[outfit] || outfit, shoes, hair: LIGHT[hair] || hair, top, bot, sho };
   return { ck, outfit, shoes, hair, top, bot, sho };
 }
 

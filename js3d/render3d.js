@@ -217,6 +217,19 @@ export class View {
     if (me.car && (this.night || 0) > 0.3) { const a = me.car.angle; this.head.intensity = 60 * this.night; this.head.position.set(me.car.x * M + Math.cos(a) * 2, 0.8, me.car.y * M + Math.sin(a) * 2); this.head.target.position.set(me.car.x * M + Math.cos(a) * 20, 0, me.car.y * M + Math.sin(a) * 20); } else this.head.intensity = 0;
   }
   render() {
+    // adaptive resolution: if frames run slow (busy GPU, wide views from the helicopter), render fewer pixels;
+    // recover gradually when there is headroom. Keeps motion smooth instead of stuttering.
+    const now = performance.now(), dtm = this._lastR ? now - this._lastR : 16; this._lastR = now;
+    this._ft = this._ft ? this._ft * 0.93 + Math.min(dtm, 100) * 0.07 : 16;
+    const base = Math.min(window.devicePixelRatio || 1, this.q.pr), cap = this.air ? base * 0.8 : base;
+    this._scale = this._scale || 1; this._scaleT = (this._scaleT || 0) + 1;
+    if (this._scaleT > 20) {
+      let ns = this._scale;
+      if (this._ft > 24 && ns > 0.55) ns = Math.max(0.55, ns - 0.1); else if (this._ft < 15 && ns < 1) ns = Math.min(1, ns + 0.05);
+      const pr = Math.max(0.5, cap * ns);
+      if (ns !== this._scale || Math.abs(this.renderer.getPixelRatio() - pr) > 0.01) { this._scale = ns; this.renderer.setPixelRatio(pr); this.resize(); this._scaleT = 0; }
+    }
+    if (this.bloom) this.bloom.enabled = !this.air;
     // airborne: shadows only refresh twice a second (they're tiny from up there) — big saving
     const sm = this.renderer.shadowMap;
     if (this.air) { sm.autoUpdate = false; this._shAcc = (this._shAcc || 0) + 1; if (this._shAcc % 30 === 0) sm.needsUpdate = true; } else sm.autoUpdate = true;

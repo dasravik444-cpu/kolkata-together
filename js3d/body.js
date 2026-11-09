@@ -299,7 +299,7 @@ export class Character {
   /* ---------- realistic MakeHuman body (CC0 assets baked into chars/) ---------- */
   setLookMH(app) {
     const key = JSON.stringify(app) + FACE.ver + (this.hi ? 'H' : 'L'); if (this.key === key && this.complete) return; this.key = key; this.app = app;
-    const L = lookParts(app, it); const ck = L.ck; this.f = ck === 'f';
+    const L = lookParts(app, it, !this.hi); const ck = L.ck; this.f = ck === 'f';
     const bodyPart = this.hi ? 'body' : 'lod';
     const wear = [L.outfit, L.shoes]; const extra = this.hi ? ['eyes', 'eyelashes01', ck === 'f' ? 'eyebrow004' : 'eyebrow001'] : ['eyes'];
     const need = [bodyPart, ...wear, L.hair, ...extra]; const geos = need.map((n) => partGeo(ck, n));
@@ -324,7 +324,7 @@ export class Character {
       for (const k of ['position', 'normal', 'uv', 'skinIndex', 'skinWeight']) g.setAttribute(k, src.attributes[k]);
       if (colors) g.setAttribute('color', colors);
       g.setIndex(index || src.index); g.boundingSphere = src.boundingSphere;
-      const m = new THREE.SkinnedMesh(g, material); m.frustumCulled = false; m.castShadow = true; m.receiveShadow = false;
+      const m = new THREE.SkinnedMesh(g, material); m.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 1.5); m.castShadow = true; m.receiveShadow = false;
       holder.add(m); m.bind(skel, new THREE.Matrix4()); return m;
     };
     const bodyGeo = partGeo(ck, bodyPart);
