@@ -11,6 +11,8 @@ const SPEC = {
   heli: { flip: true },
   car_gallardo: { yaw: Math.PI / 2, paint: /Car_Paint|Gallardo_Base/i },
   car_718: { yaw: Math.PI / 2, paint: /Paint_Material|Coloured_Material/i },
+  car_alto: { yaw: -Math.PI / 2, paint: /^primary$/i }, car_wagonr: { yaw: -Math.PI / 2, paint: /^primary$/i },
+  bus: { yaw: -Math.PI / 2 }, car_police: { yaw: Math.PI / 2 },
 };
 export const RM = {};
 export function loadRealModels() {

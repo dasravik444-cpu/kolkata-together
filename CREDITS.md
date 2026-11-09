@@ -14,6 +14,10 @@ given a procedural skeleton and walk/graze animation by this project. Files: `mo
 | `models/dog.glb` | "Labrador Dog" | kenchoo | https://sketchfab.com/3d-models/labrador-dog-1f56cfbab07e4fe49b5d9e521c82073a |
 | `models/heli.glb` | "Helicopter v2" | Aditya3D | https://sketchfab.com/3d-models/helicopter-v2-42927f1c939e4447978b09dd1e22521c |
 | `models/car_gallardo.glb` | "2009 Lamborghini Gallardo LP560-4 Spyder" | Ddiaz Design | https://sketchfab.com/3d-models/2009-lamborghini-gallardo-lp560-4-spyder-73e19a0eb9364e18837e59a4970a93a4 |
+| `models/car_alto.glb` | "2016 Maruti Suzuki Alto K10" | BHP3D | https://sketchfab.com/3d-models/2016-maruti-suzuki-alto-k10-e45dbd5e86df4090abf1651e74447e1f |
+| `models/car_wagonr.glb` | "2013 Suzuki WagonR" | BHP3D | https://sketchfab.com/3d-models/2013-suzuki-wagonr-71112627f42342099ff95b59e7532663 |
+| `models/bus.glb` | "City Bus - rigged / RoAZ-5236" | Yo.Ri | https://sketchfab.com/3d-models/city-bus-rigged-5236-36646fcf41da498ca24a02f4b6fb1d95 |
+| `models/car_police.glb` | "Police car" | Mateusz Woliński | https://sketchfab.com/3d-models/police-car-9166b13b6ae341f4bfc093edb71d74f4 |
 | `models/car_718.glb` | "Porsche 718 Cayman GT4 2020 / www.vecarz.com" | vecarz | https://sketchfab.com/3d-models/porsche-718-cayman-gt4-2020-wwwvecarzcom-0b210ff1ee3e4f75acf3fd31e6b1b298 |
 
 ## Public-domain (CC0) assets

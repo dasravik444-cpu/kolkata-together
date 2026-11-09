@@ -321,10 +321,11 @@ function extrudeProfile(pts, L, W, bevel = 0.06, smooth = true, taperFrom = 0.8,
   g.computeVertexNormals(); return g;
 }
 const vehCache = {};
-const REAL_CAR = { sports_red: 'car_gallardo', sports_lime: 'car_gallardo', sports_blue: 'car_718', sports_orange: 'car_718', sports_black: 'car_718' };
+const REAL_CAR = { sports_red: 'car_gallardo', sports_lime: 'car_gallardo', sports_blue: 'car_718', sports_orange: 'car_718', sports_black: 'car_718', taxi: 'car_alto', sedan: 'car_wagonr', sedan2: 'car_alto', sedan3: 'car_wagonr', hatch: 'car_alto', suv: 'car_wagonr', bus: 'bus', police: 'car_police' };
+const REAL_COL = { suv: '#26262c', bus: null, police: null };
 export function buildVehicle(type) {
   const spec = VEH[type] || VEH.sedan;
-  if (REAL_CAR[type] && hasReal(REAL_CAR[type])) return realCar(REAL_CAR[type], spec.col);
+  if (REAL_CAR[type] && hasReal(REAL_CAR[type])) return realCar(REAL_CAR[type], type in REAL_COL ? REAL_COL[type] : spec.col);
   if (!vehCache[type]) vehCache[type] = compact(makeVehicle(type, spec));
   const g = vehCache[type].clone(true);
   g.userData.wheels = []; g.userData.lights = [];
