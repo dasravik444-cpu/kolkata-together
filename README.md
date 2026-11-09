@@ -102,13 +102,20 @@ Progress (money, clothes, cars, weapons, photos) is saved in each player's brows
 
 All graphics are original pixel art drawn in code: tiles, buildings, characters, food, cars and animals. The style is inspired by the DS-era top-down RPG look and classic top-down crime games, but **no artwork, sprites, music or maps are copied from Pokémon, GTA or any other game**. That keeps the project safe to host publicly.
 
+### 3D characters and motion (free, openly licensed sources)
+
+- **Bodies, skin, clothes, hair, eyes**: built from the assets bundled with [MakeHuman](http://www.makehumancommunity.org) 1.x, which the MakeHuman project releases under **CC0** (public domain). They are baked offline into the compact files in `chars/`.
+- **Movement**: real human motion capture from the [CMU Graphics Lab Motion Capture Database](http://mocap.cs.cmu.edu) (free for any use), retargeted onto the game's skeleton (`js3d/mocapdata.js`). This covers walking, jogging, sprinting, standing idle, talking, waving, punching, kicking, sitting and salsa.
+- **Your face**: the photo you pick under "My face" is warped onto the 3D head's skin in your browser. It is never uploaded to this repository.
+
 The two playable characters are based on the reference photos. He has brown skin, black swept-back hair, rectangular glasses, a trimmed beard, a pinstripe shirt with satin waistcoat, tie and lapel pin. She has fair skin, long dark-brown hair, kohl eyeliner, jhumkas and a mustard kurta with gold zari and a dupatta, and is drawn slightly shorter.
 
 ## Code map
 
 | File | What it does |
 |---|---|
-| `index.html` + `js3d/` | The 3D version: `game3d.js` (game core), `render3d.js` (renderer, lighting, camera), `world3d.js` (3D city + interiors), `models.js` (people, vehicles, animals, trees), `textures.js` (procedural textures) |
+| `index.html` + `js3d/` | The 3D version: `game3d.js` (game core), `render3d.js` (renderer, lighting, camera), `world3d.js` (3D city + interiors), `body.js` (characters + animation), `human.js` (realistic bodies, clothes, photo face), `mocap.js` + `mocapdata.js` (motion capture), `models.js` (vehicles, animals, trees), `textures.js` (procedural textures) |
+| `chars/` | Baked character meshes and textures (MakeHuman CC0) |
 | `classic.html` | The original 2D pixel-art version |
 | `js/main.js` | Engine: loop, input, camera, rendering, lighting, gameplay, crime, cabs, multiplayer sync |
 | `js/mapgen.js` | The Kolkata map: roads and traffic graph, buildings, landmarks, zones |

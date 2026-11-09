@@ -7,6 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { M, buildVehicle, buildAnimal, animateAnimal, mat, VEH_SPEC, buildHeli } from './models.js';
 import { Character as Human, setBodyDetail } from './body.js';
+import { onHumanAsset } from './human.js';
 import { buildCity, buildInterior3D, heightAt, TS, GLOW_MAT } from './world3d.js';
 import { setAniso, pattern, FACE } from './textures.js';
 import { DIRS } from '../js/entities.js';
@@ -136,7 +137,7 @@ export class View {
   sync(G, dt) {
     this.t += dt;
     const me = G.me, S = G.scene; const live = new Set();
-    const px = me.x, py = me.y; const drawPx = this.q.draw / M;
+    const px = me.x, py = me.y; const drawPx = this.q.draw / M; const air = !!(me.heli && me.heli.alt > 12); this.air = air;
     const near = (e, r) => Math.abs(e.x - px) < r && Math.abs(e.y - py) < r;
     // decide which humans get full detail (nearest few)
     if (!this._fullT || this.t - this._fullT > 0.5) {
@@ -147,7 +148,7 @@ export class View {
       let v = this.vis.get(key);
       const lk = JSON.stringify(look) + FACE.ver;
       if (v && v.lk !== lk) { v.h.setLook(look); v.lk = lk; }
-      if (!v) { const h = new Human(look); this.scene.add(h.root); v = { h, full, lk, px: ent.x, py: ent.y, skip: 0 }; this.vis.set(key, v); }
+      if (!v) { const h = new Human(look, key === 'me' || key === 'other'); this.scene.add(h.root); v = { h, full, lk, px: ent.x, py: ent.y, skip: 0 }; this.vis.set(key, v); }
       live.add(key);
       const dx = ent.x - v.px, dy = ent.y - v.py; const sp = Math.hypot(dx, dy) / Math.max(dt, 1e-3) * M; v.px = ent.x; v.py = ent.y;
       let ang = opt && opt.angle !== undefined ? opt.angle : (sp > 0.2 ? Math.atan2(dx, dy) : (v.ang ?? DIR_ANG[ent.dir] ?? 0));
@@ -168,20 +169,20 @@ export class View {
       return v;
     };
     // player
-    if (!me.car && !me.heli) human('me', me, G.profile.app, true, me.fly && me.fly.vz < 2 && me.fly.z > 0.4 ? 'ko' : me.state, { angle: Math.PI / 2 - me.angle, speed: me.moving ? (me.running ? 5.5 : 2.0) : 0, weapon: me.weaponOut ? me.weapon : null, aim: me.weaponOut && !['knife', 'bat'].includes(me.weapon), eating: G.eating, action: me.anim });
+    if (!me.car && !me.heli) human('me', me, G.profile.app, true, me.fly && me.fly.vz < 2 && me.fly.z > 0.4 ? 'ko' : me.state, { angle: Math.PI / 2 - me.angle, speed: me.moving ? (me.running ? 5.0 : 1.6) * (me.speedK || 1) : 0, weapon: me.weaponOut ? me.weapon : null, aim: me.weaponOut && !['knife', 'bat'].includes(me.weapon), eating: G.eating, action: me.anim });
     const o = G.other;
     if (o && o.look && o.scene === G.sceneId()) {
       if (o.heli) { /* drawn with the helicopters */ } else if (o.car) { const key = 'ocar'; let v = this.vis.get(key); if (!v || v.type !== o.car.type) { if (v) this.scene.remove(v.root); v = { root: buildVehicle(o.car.type), type: o.car.type }; this.scene.add(v.root); this.vis.set(key, v); } live.add(key); v.root.position.set(o.x * M, 0, o.y * M); v.root.rotation.y = -o.car.angle; }
-      else human('other', o, o.look, true, o.state, { weapon: o.weaponOut ? o.weapon : null, speed: o.moving ? (o.running ? 5.5 : 2.0) : undefined, action: o.anim });
+      else human('other', o, o.look, true, o.state, { weapon: o.weaponOut ? o.weapon : null, speed: o.moving ? (o.running ? 5.0 : 1.6) : undefined, action: o.anim });
     }
     for (const n of [...G.npcs, ...G.police]) {
-      if (!near(n, Math.min(drawPx, 600))) continue;
+      if (!near(n, air ? 200 : Math.min(drawPx, 600))) continue;
       const st = n.state === 'ko' || n.fly ? 'ko' : n.state === 'hands' ? 'hands' : n.state === 'dance' ? 'dance' : n.role === 'sitter' && n.state !== 'flee' ? 'sit' : 'walk';
       human(n, n, n.look, this.fullSet.has(n), st, { carry: n.carry, action: n.anim });
     }
     if (S.kind === 'world') {
       for (const a of G.animals) {
-        if (!near(a, 520)) continue;
+        if (!near(a, air ? 160 : 520)) continue;
         let v = this.vis.get(a); if (!v) { v = { root: buildAnimal(a.kind), px: a.x, py: a.y }; this.scene.add(v.root); this.vis.set(a, v); }
         live.add(a); const dx = a.x - v.px, dy = a.y - v.py; v.px = a.x; v.py = a.y; const mv = Math.hypot(dx, dy) > 0.01;
         if (mv) { const ang = Math.atan2(dx, dy); let d = ang - v.root.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); v.root.rotation.y += d * Math.min(1, dt * 8); }
@@ -215,7 +216,12 @@ export class View {
     // headlight on the player's car at night
     if (me.car && (this.night || 0) > 0.3) { const a = me.car.angle; this.head.intensity = 60 * this.night; this.head.position.set(me.car.x * M + Math.cos(a) * 2, 0.8, me.car.y * M + Math.sin(a) * 2); this.head.target.position.set(me.car.x * M + Math.cos(a) * 20, 0, me.car.y * M + Math.sin(a) * 20); } else this.head.intensity = 0;
   }
-  render() { if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera); }
+  render() {
+    // airborne: shadows only refresh twice a second (they're tiny from up there) — big saving
+    const sm = this.renderer.shadowMap;
+    if (this.air) { sm.autoUpdate = false; this._shAcc = (this._shAcc || 0) + 1; if (this._shAcc % 30 === 0) sm.needsUpdate = true; } else sm.autoUpdate = true;
+    if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
+  }
 
   /* ------------------------------ photos & previews ------------------------------ */
   selfie(G, people) {
@@ -237,15 +243,17 @@ export class View {
   }
 }
 
-let previewR = null, previewS = null, previewCam = null, previewH = null;
+let previewR = null, previewS = null, previewCam = null, previewH = null, previewT = null, previewA = null, previewHook = null;
 export function preview3d(target, app) {
   if (!previewR) {
     previewR = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); previewR.setSize(384, 576); previewR.toneMapping = THREE.ACESFilmicToneMapping; previewR.toneMappingExposure = 0.95;
     previewS = new THREE.Scene(); const k = new THREE.DirectionalLight('#fff4e8', 2.4); k.position.set(1.5, 3, 3); previewS.add(k); const f = new THREE.DirectionalLight('#c8d8ff', 0.8); f.position.set(-2, 1, 1); previewS.add(f); previewS.add(new THREE.HemisphereLight('#ffffff', '#8a8070', 0.7));
     previewCam = new THREE.PerspectiveCamera(28, 384 / 576, 0.1, 50); previewCam.position.set(0, 1.05, 4.2); previewCam.lookAt(0, 0.92, 0);
   }
+  previewT = target; previewA = app;
+  if (!previewHook) previewHook = onHumanAsset(() => { clearTimeout(previewHook.t); previewHook.t = setTimeout(() => { if (previewT && previewT.isConnected) preview3d(previewT, previewA); }, 120); });
   if (previewH) previewS.remove(previewH.root);
-  previewH = new Human(app); previewH.root.rotation.y = -0.35; for (let i = 0; i < 40; i++) previewH.animate(0.05, 'walk', 0); previewS.add(previewH.root);
+  previewH = new Human(app, true); previewH.root.rotation.y = -0.35; for (let i = 0; i < 40; i++) previewH.animate(0.05, 'walk', 0); previewS.add(previewH.root);
   previewR.render(previewS, previewCam);
   target.width = 384; target.height = 576; const g = target.getContext('2d'); g.clearRect(0, 0, 384, 576); g.drawImage(previewR.domElement, 0, 0);
 }

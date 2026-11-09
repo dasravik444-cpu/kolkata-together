@@ -6,6 +6,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bodyGeo, buildHair, buildGlasses, buildHat, clothMat, it, mat } from './models.js';
 import { faceTexture, photoFaceTexture, pattern, FACE } from './textures.js';
 import { shade } from '../js/util.js';
+import { CLIPS, MBONES, Pose, sampleClip, blendPose, UPPER } from './mocap.js';
+import { MAN, humansReady, partGeo, lookParts, skinTexture, crowdSkin, clothMaterial, hairMaterial, smallMaterial, bodyIndex, regionColors, onHumanAsset } from './human.js';
+import { FACES } from './textures.js';
 
 /* ------------------------------ proportions ------------------------------ */
 function joints(f) {
@@ -202,11 +205,60 @@ function fabricTex() { // subtle woven detail multiplied over everything
 const lath = (pts, seg = 24, ps = 0, pl = Math.PI * 2) => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), seg, ps, pl);
 export let BODY_STEP = 0.016;
 export function setBodyDetail(q) { BODY_STEP = q === 'high' ? 0.013 : q === 'low' ? 0.022 : 0.016; }
-const _e = new THREE.Euler(), _q = new THREE.Quaternion();
+const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _qI = new THREE.Quaternion();
+const MIDX = Object.fromEntries(MBONES.map((n, i) => [n, i]));
+const LOCO = ['walk', 'jog', 'run'];
+const MO_ACTS = { punch: 'punch', kick: 'kick', wave: 'wave' };
+
+// bone direction pairs used to relate rest poses
+const DIRP = { spine: ['spine', 'chest'], chest: ['chest', 'neck'], neck: ['neck', 'head'], head: ['head', 'headTop'] };
+for (const s of ['L', 'R']) Object.assign(DIRP, { ['ua' + s]: ['ua' + s, 'fa' + s], ['fa' + s]: ['fa' + s, 'hd' + s], ['hd' + s]: ['hd' + s, 'tip' + s], ['th' + s]: ['th' + s, 'sh' + s], ['sh' + s]: ['sh' + s, 'ft' + s], ['ft' + s]: ['ft' + s, 'toe' + s] });
+function procDirs(f) { // joint positions of the procedural animation's rest pose (arms hanging down)
+  const J = joints(f); const P = { root: [0, 0, 0], hips: [0, J.hips[1], 0], spine: [0, J.spine[1], 0], chest: [0, J.chest[1], 0], neck: [0, J.neck[1], 0], head: [0, J.head[1], 0], headTop: [0, J.head[1] + 0.15, 0] };
+  for (const s of ['L', 'R']) Object.assign(P, { ['ua' + s]: J['sh' + s], ['fa' + s]: J['el' + s], ['hd' + s]: J['wr' + s], ['tip' + s]: J['tip' + s], ['th' + s]: J['hp' + s], ['sh' + s]: J['kn' + s], ['ft' + s]: J['an' + s], ['toe' + s]: J['toe' + s] });
+  return P;
+}
+const _va = new THREE.Vector3(), _vb = new THREE.Vector3();
+function rest2(Jc, Jk) { // per bone: rotation taking this character's rest direction onto the canonical one
+  const C = { inv: {} };
+  for (const n of BONES) {
+    const q = new THREE.Quaternion(); const d = DIRP[n];
+    if (d && Jk[d[1]]) { _va.fromArray(Jc[d[1]]).sub(_vb.fromArray(Jc[d[0]])).normalize(); const t = new THREE.Vector3().fromArray(Jk[d[1]]).sub(_vb.fromArray(Jk[d[0]])).normalize(); q.setFromUnitVectors(_va, t); }
+    C[n] = q; C.inv[n] = q.clone().invert();
+  }
+  C.inv[undefined] = new THREE.Quaternion();
+  return C;
+}
 
 export class Character {
-  constructor(app) { this.root = new THREE.Group(); this.t = Math.random() * 10; this.phase = Math.random() * 6; this.act = null; this.setLook(app); }
+  constructor(app, hi = true) {
+    this.hi = hi; this.root = new THREE.Group(); this.t = Math.random() * 10; this.phase = Math.random() * 6; this.act = null;
+    this.gphase = Math.random(); this.itime = Math.random() * 10; this.idleClip = hi || Math.random() < 0.5 ? 'idle2' : 'idle';
+    this.pa = new Pose(); this.pb = new Pose(); this.pc = new Pose(); this.pact = new Pose();
+    this.setLook(app); this.walkClip = this.f ? 'walk2' : 'walk';
+  }
+  /* motion-capture base layer: idle / walk / jog / run blended by speed, sit, dance, talk */
+  moBase(dt, state, speed, opt) {
+    if (state === 'sit' && !opt.eating) { this.itime += dt; return sampleClip(CLIPS.sit, this.itime / CLIPS.sit.dur, this.pc); }
+    if (state === 'dance') { this.itime += dt; return sampleClip(CLIPS.dance, this.itime / CLIPS.dance.dur, this.pc); }
+    if (state !== 'walk') return null;
+    const idle = CLIPS[opt.talk ? 'talk' : this.idleClip];
+    if (speed < 0.05) { this.itime += dt; return sampleClip(idle, this.itime / idle.dur, this.pc); }
+    const cl = [CLIPS[this.walkClip], CLIPS.jog, CLIPS.run];
+    let i = 0; while (i < cl.length - 2 && speed > cl[i + 1].speed) i++;
+    const A = cl[i], B = cl[i + 1]; const w = Math.max(0, Math.min(1, (speed - A.speed) / (B.speed - A.speed)));
+    const stride = A.speed * A.dur * (1 - w) + B.speed * B.dur * w;
+    this.gphase = (this.gphase + (speed * dt) / stride) % 1;
+    sampleClip(A, this.gphase, this.pa); sampleClip(B, this.gphase, this.pb); blendPose(this.pa, this.pb, w, this.pc);
+    const wi = Math.max(0, 1 - speed / 0.7);
+    if (wi > 0) { this.itime += dt; sampleClip(idle, this.itime / idle.dur, this.pa); blendPose(this.pc, this.pa, wi, this.pc); }
+    return this.pc;
+  }
   setLook(app) {
+    if (humansReady()) return this.setLookMH(app);
+    return this.setLookLegacy(app);
+  }
+  setLookLegacy(app) {
     const key = JSON.stringify(app) + FACE.ver + BODY_STEP; if (this.key === key) return; this.key = key; this.app = app;
     while (this.root.children.length) this.root.remove(this.root.children[0]);
     const f = app.gender === 'f'; this.f = f;
@@ -237,11 +289,70 @@ export class Character {
     mesh.add(bones.root); mesh.bind(new THREE.Skeleton(BONES.map((n) => bones[n])));
     this.root.add(mesh); this.mesh = mesh; this.bones = bones;
     this.restQ = {}; for (const n of BONES) this.restQ[n] = new THREE.Quaternion();
-    this.hipsY = bones.hips.position.y;
+    this.hipsY = bones.hips.position.y; this.Cp = null; this.Cm = MAN ? rest2(procDirs(f), MAN.chars.m.joints) : null; this.hand = null; this.mh = false;
     // head on the head bone
     const head = buildHead(app); head.position.set(0, 0.098, 0.014); bones.head.add(head); this.headG = head;
     this.dressUp(top, bot, bones, J, f);
     this.weaponKind = undefined; this.weapon = null;
+  }
+
+  /* ---------- realistic MakeHuman body (CC0 assets baked into chars/) ---------- */
+  setLookMH(app) {
+    const key = JSON.stringify(app) + FACE.ver + (this.hi ? 'H' : 'L'); if (this.key === key && this.complete) return; this.key = key; this.app = app;
+    const L = lookParts(app, it); const ck = L.ck; this.f = ck === 'f';
+    const bodyPart = this.hi ? 'body' : 'lod';
+    const wear = [L.outfit, L.shoes]; const extra = this.hi ? ['eyes', 'eyelashes01', ck === 'f' ? 'eyebrow004' : 'eyebrow001'] : ['eyes'];
+    const need = [bodyPart, ...wear, L.hair, ...extra]; const geos = need.map((n) => partGeo(ck, n));
+    this.complete = geos.every(Boolean);
+    if (!this.complete) { // build when everything has arrived
+      if (!this._wait) this._wait = onHumanAsset(() => { if (need.every((n) => partGeo(ck, n))) { this._wait(); this._wait = null; this.key = null; this.setLookMH(this.app); } });
+      if (!this.bones) { this.setLookLegacy(app); this.key = null; }
+      return; // keep the current look until the parts arrive
+    }
+    while (this.root.children.length) this.root.remove(this.root.children[0]);
+    const C = MAN.chars[ck], J = C.joints;
+    // skeleton (rest = MakeHuman A-pose, bone frames world-aligned)
+    const bones = {};
+    for (const n of BONES) { const b = new THREE.Bone(); b.name = n; bones[n] = b; }
+    for (const n of BONES) { const p = J[n], pp = PARENT[n] ? J[PARENT[n]] : [0, 0, 0]; bones[n].position.set(p[0] - pp[0], p[1] - pp[1], p[2] - pp[2]); if (PARENT[n]) bones[PARENT[n]].add(bones[n]); }
+    const holder = new THREE.Group(); holder.add(bones.root); bones.root.updateMatrixWorld(true);
+    const skel = new THREE.Skeleton(BONES.map((n) => bones[n])); this.root.add(holder);
+    const face = app.faceId && FACES[app.faceId] ? FACES[app.faceId].canvas : null;
+    const skinM = this.hi ? new THREE.MeshPhysicalMaterial({ map: skinTexture(ck, app, face), roughness: 0.52, sheen: 0.3, sheenColor: new THREE.Color('#ff8a6a'), sheenRoughness: 0.55, envMapIntensity: 0.45 }) : crowdSkin(ck, app.skin);
+    const mk = (name, material, index, colors) => {
+      const src = partGeo(ck, name); const g = new THREE.BufferGeometry();
+      for (const k of ['position', 'normal', 'uv', 'skinIndex', 'skinWeight']) g.setAttribute(k, src.attributes[k]);
+      if (colors) g.setAttribute('color', colors);
+      g.setIndex(index || src.index); g.boundingSphere = src.boundingSphere;
+      const m = new THREE.SkinnedMesh(g, material); m.frustumCulled = false; m.castShadow = true; m.receiveShadow = false;
+      holder.add(m); m.bind(skel, new THREE.Matrix4()); return m;
+    };
+    const bodyGeo = partGeo(ck, bodyPart);
+    this.mesh = mk(bodyPart, skinM, bodyIndex(ck, bodyPart, bodyGeo, wear));
+    const tinted = !app.npcNatural;
+    const ts = L.top.style, layered = ts === 'waistcoat' || ts === 'blazer' || ts === 'jacket';
+    const cols = [(ts === 'waistcoat' ? L.top.c[1] : L.top.c[0]) || '#888', L.bot.c[0] || '#333', L.sho.c[0] || '#222', layered ? (ts === 'waistcoat' ? L.top.c[0] : (L.top.c[2] || '#f2f0ea')) : (L.top.c[1] || L.top.c[0] || '#888')];
+    const og = partGeo(ck, L.outfit); mk(L.outfit, clothMaterial(L.outfit, tinted), null, tinted ? regionColors(og, ck + L.outfit + cols.join(), cols) : null);
+    const sg = partGeo(ck, L.shoes); mk(L.shoes, clothMaterial(L.shoes, tinted), null, tinted ? regionColors(sg, ck + L.shoes + cols.join(), cols) : null);
+    if (!(app.hat && it(app.hat).style !== 'none' && it(app.hat).style !== 'beanie' && false)) mk(L.hair, hairMaterial(L.hair, app.hairColor || '#1a1410'));
+    mk('eyes', smallMaterial('eyes', '#ffffff', 0));
+    if (this.hi) { mk('eyelashes01', smallMaterial('eyelashes01', '#1a1410', 0.25)); if (!face) mk(ck === 'f' ? 'eyebrow004' : 'eyebrow001', smallMaterial(ck === 'f' ? 'eyebrow004' : 'eyebrow001', app.hairColor || '#1a1410', 0.25)); }
+    this.bones = bones; this.J = J;
+    this.restQ = {}; for (const n of BONES) this.restQ[n] = new THREE.Quaternion();
+    this.hipsY = bones.hips.position.y;
+    // canonical-frame corrections: animation authored for other rest poses is re-expressed for this skeleton
+    this.Cp = rest2(J, procDirs(this.f)); this.Cm = rest2(J, MAN.chars.m.joints);
+    // accessories (glasses / hats / earrings) anchored at the eyes
+    const em = [(J.eyeL[0] + J.eyeR[0]) / 2, (J.eyeL[1] + J.eyeR[1]) / 2, (J.eyeL[2] + J.eyeR[2]) / 2];
+    const sc = this.f ? 0.86 : 0.9; const acc = new THREE.Group(); acc.position.set(em[0] - J.head[0], em[1] - J.head[1] - 0.012 * sc, em[2] - J.head[2] + 0.026 - 0.112 * sc); acc.scale.setScalar(sc);
+    const add = (parent, geo, m, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.scale.set(sx, sy, sz); me.castShadow = true; parent.add(me); return me; };
+    const gl = it(app.glasses), hat = it(app.hat), ear2 = it(app.earrings);
+    if (gl.style !== 'none' && !(face && app.photoGlasses)) buildGlasses(acc, gl, add);
+    if (hat.style !== 'none') buildHat(acc, hat, add);
+    if (ear2.style !== 'none') for (const sx of [-1, 1]) { const emm = mat(ear2.c[0], { m: 1, r: 0.25 }); const e = add(acc, ear2.style === 'hoops' ? new THREE.TorusGeometry(0.014, 0.0025, 6, 12) : ear2.style === 'studs' ? new THREE.SphereGeometry(0.006, 6, 6) : new THREE.ConeGeometry(0.009, 0.02, 10), emm, sx * 0.083, ear2.style === 'jhumka' ? -0.045 : -0.035, 0.0); if (ear2.style === 'jhumka') e.rotation.x = Math.PI; }
+    if (acc.children.length) bones.head.add(acc);
+    this.hand = new THREE.Group(); this.hand.quaternion.copy(this.Cp.inv.hdR); bones.hdR.add(this.hand);
+    this.weaponKind = undefined; this.weapon = null; this.mh = true;
   }
   dressUp(top, bot, B, J, f) {
     const add = (bone, geo, m, x = 0, y = 0, z = 0) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.castShadow = true; B[bone].add(me); return me; };
@@ -282,19 +393,21 @@ export class Character {
     if (kind === 'shotgun' || kind === 'rifle') { box(0.035, 0.045, 0.72, 0, 0, 0.22); box(0.04, 0.09, 0.18, 0, -0.03, -0.12, mat(kind === 'shotgun' ? '#5a3a20' : '#2a2a2e', { r: 0.6 })); box(0.03, 0.08, 0.03, 0, -0.06, 0.04); }
     if (kind === 'knife') { box(0.004, 0.028, 0.16, 0, 0, 0.1, mat('#d8dce4', { m: 1, r: 0.15 })); box(0.02, 0.025, 0.08, 0, 0, 0, mat('#2a1a10')); }
     if (kind === 'bat') { box(0.07, 0.05, 0.62, 0, 0, 0.34, mat('#d8b070', { r: 0.6 })); box(0.03, 0.03, 0.2, 0, 0, 0, mat('#1d1b20')); }
-    g.position.set(0, -0.09, 0.02); g.rotation.x = -Math.PI / 2; this.bones.hdR.add(g); this.weapon = g;
+    g.position.set(0, -0.09, 0.02); g.rotation.x = -Math.PI / 2; (this.hand || this.bones.hdR).add(g); this.weapon = g;
   }
-  play(name, dur) { this.act = { name, t: 0, dur: dur || ({ punch: 0.45, slap: 0.5, kick: 0.6, throw: 0.9, hit: 0.5, shoot: 0.18, wave: 1.2 }[name] || 0.5) }; }
+  play(name, dur) { if (MO_ACTS[name] && CLIPS[MO_ACTS[name]] && !dur) dur = CLIPS[MO_ACTS[name]].dur; this.act = { name, t: 0, dur: dur || ({ punch: 0.45, slap: 0.5, kick: 0.6, throw: 0.9, hit: 0.5, shoot: 0.18, wave: 1.2 }[name] || 0.5) }; }
 
   /* ------------------------------ animation ------------------------------ */
   animate(dt, state, speed, opt = {}) {
     if (!this.bones) return;
     this.t += dt; const t = this.t;
-    const P = {}; const set = (n, x = 0, y = 0, z = 0) => (P[n] = [x, y, z]);
+    const P = {}; let touch = false; const T = new Set(); const set = (n, x = 0, y = 0, z = 0) => { P[n] = [x, y, z]; if (touch) T.add(n); };
     for (const n of BONES) set(n);
-    let hipsDY = 0, hipsDZ = 0;
+    let hipsDY = 0, hipsDZ = 0, hipsDX = 0;
     const L = 'L', Rr = 'R';
-    if (state === 'sit' || state === 'drive' || state === 'boat') {
+    const mo = this.moBase(dt, state, speed, opt);
+    if (mo) { const sc = this.f ? 0.966 : 1; hipsDX = mo.h[0] * sc; hipsDY = mo.h[1] * sc; hipsDZ = mo.h[2] * sc; if (state === 'sit') { hipsDY = -0.44; hipsDZ = -0.05; hipsDX = 0; } }
+    else if (state === 'sit' || state === 'drive' || state === 'boat') {
       hipsDY = -0.44; hipsDZ = -0.05;
       for (const s of [L, Rr]) { set('th' + s, -1.5, 0, s === L ? -0.06 : 0.06); set('sh' + s, 1.45); set('ft' + s, 0.05); }
       set('spine', 0.06); set('chest', -0.02);
@@ -341,13 +454,17 @@ export class Character {
         const look = Math.sin(t * 0.23) > 0.6 ? Math.sin(t * 0.9) * 0.5 : 0; set('head', 0.02, look, 0);
       }
     }
+    touch = true;
     if (opt.aim) { set('uaR', -1.45, -0.15, -0.1); set('faR', -0.05); if (this.weaponKind && this.weaponKind !== 'pistol' && this.weaponKind !== 'knife' && this.weaponKind !== 'bat') { set('uaL', -1.2, 0.5, 0.2); set('faL', -0.8); } set('chest', P.chest[0], 0.2); }
     if (opt.carry) { set('uaL', -0.55, 0, 0.1); set('faL', -1.25); set('uaR', -0.55, 0, -0.1); set('faR', -1.25); }
     if (opt.wave) { set('uaR', 0, 0, -2.5); set('faR', 0, 0, -0.45 + Math.sin(t * 10) * 0.45); }
     // one-shot actions layered on top
+    let actPose = null, actW = 0, actMask = null;
     if (this.act) {
       const A = this.act; A.t += dt; const u = Math.min(1, A.t / A.dur), e = Math.sin(Math.PI * u), e2 = u < 0.35 ? u / 0.35 : 1 - (u - 0.35) / 0.65;
-      switch (A.name) {
+      const mc = MO_ACTS[A.name] && CLIPS[MO_ACTS[A.name]];
+      if (mc) { sampleClip(mc, u, this.pact); actPose = this.pact; actW = Math.min(1, A.t / 0.15, (A.dur - A.t) / 0.2); actMask = speed > 0.5 && A.name !== 'kick' ? UPPER : null; }
+      else switch (A.name) {
         case 'punch': set('uaR', -1.45 * e2, 0.15 * e2, -0.15); set('faR', -1.6 * (1 - e2)); set('chest', 0.05, -0.45 * e2); set('spine', 0.08, -0.2 * e2); set('uaL', -0.6, 0, 0.2); set('faL', -1.8); break;
         case 'slap': set('uaR', -0.7, 0, -0.9 + 1.6 * u); set('faR', -0.6 + 0.4 * e); set('chest', 0, 0.5 - 1.0 * u); break;
         case 'kick': set('thR', -1.6 * e2); set('shR', 1.2 * (1 - e2) * Math.min(1, u * 4)); set('spine', -0.25 * e2); set('uaL', -0.4, 0, 0.6 * e); set('uaR', -0.4, 0, -0.6 * e); hipsDY += -0.02 * e; break;
@@ -359,8 +476,17 @@ export class Character {
       if (u >= 1) this.act = null;
     }
     // apply with smooth blending (transitions never snap)
-    const k = 1 - Math.exp(-dt * 16);
-    for (const n of BONES) { if (n === 'root') continue; const v = P[n]; _q.setFromEuler(_e.set(v[0], v[1], v[2], 'YXZ')); this.bones[n].quaternion.slerp(_q, k); }
-    const hb = this.bones.hips; hb.position.y += (this.hipsY + hipsDY - hb.position.y) * k; hb.position.z += (hipsDZ - hb.position.z) * k;
+    const k = 1 - Math.exp(-dt * (mo ? 28 : 16));
+    for (const n of BONES) {
+      if (n === 'root') continue; const mi = MIDX[n];
+      const useMo = mo && !T.has(n);
+      if (useMo) _q.fromArray(mo.q, mi * 4); else { const v = P[n]; _q.setFromEuler(_e.set(v[0], v[1], v[2], 'YXZ')); }
+      if (useMo && (n === 'head' || n === 'neck') && !this.act) _q.slerp(_qI, 0.55); // keep the gaze up and forward
+      const Cs = useMo ? this.Cm : this.Cp; if (Cs) _q.premultiply(Cs.inv[PARENT[n]]).multiply(Cs[n]);
+      if (actPose && actW > 0 && (!actMask || actMask[mi])) { _q2.fromArray(actPose.q, mi * 4); if (this.Cm) _q2.premultiply(this.Cm.inv[PARENT[n]]).multiply(this.Cm[n]); _q.slerp(_q2, Math.max(0, actW)); }
+      this.bones[n].quaternion.slerp(_q, k);
+    }
+    if (actPose && actW > 0 && !actMask) { const w = Math.max(0, actW); hipsDY = hipsDY * (1 - w) + actPose.h[1] * w; hipsDX = hipsDX * (1 - w) + actPose.h[0] * w; hipsDZ = hipsDZ * (1 - w) + actPose.h[2] * w; }
+    const hb = this.bones.hips; hb.position.y += (this.hipsY + hipsDY - hb.position.y) * k; hb.position.z += (hipsDZ - hb.position.z) * k; hb.position.x += (hipsDX - hb.position.x) * k;
   }
 }

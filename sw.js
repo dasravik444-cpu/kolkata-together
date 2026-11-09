@@ -1,5 +1,5 @@
 // Offline cache so the installed app opens instantly. Bump VERSION when releasing.
-const VERSION = 'kt-v3';
+const VERSION = 'kt-v4';
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {

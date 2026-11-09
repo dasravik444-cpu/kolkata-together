@@ -13,6 +13,8 @@ import * as UI from '../js/ui.js';
 import { View, preview3d } from './render3d.js';
 import { M } from './models.js';
 import { registerFace, FACES } from './textures.js';
+import { initHumans } from './human.js';
+const humansP = initHumans();
 
 /* ---------- my face photo (stored only in this browser, shared peer-to-peer) ---------- */
 let myFace = null;
@@ -344,7 +346,8 @@ function populate(dt) {
   const me = G.me;
   // pedestrians
   G.npcs = G.npcs.filter((n) => dist(n.x, n.y, me.x, me.y) < 520 || n.state === 'flee');
-  while (G.npcs.length < (view ? view.q.full * 3 + 8 : 30)) {
+  const flying = G.me.heli && G.me.heli.alt > 12;
+  while (G.npcs.length < (flying ? 8 : view ? view.q.full * 3 + 8 : 30)) {
     const s = walkableSpot(me.x, me.y, 300, 520, (t) => PED_TILES.has(t)); if (!s) break;
     G.npcs.push(new NPC(s.x, s.y));
   }
@@ -532,7 +535,7 @@ function update(dt) {
       else if ((ix || iy) && me.state === 'dance') { me.state = 'walk'; }
     } else if (me.state !== 'ko') {
       const run = keys.has('shift');
-      let sp = me.state === 'boat' ? 30 : me.state === 'swim' ? 12 : run ? 44 : 17;
+      let sp = me.state === 'boat' ? 30 : me.state === 'swim' ? 12 : run ? 40 : 13;
       const ax = clamp(ix, -1, 1), ay = clamp(iy, -1, 1);
       const yaw = view.yaw, fx = Math.sin(yaw), fz = Math.cos(yaw), rx = -Math.cos(yaw), rz = Math.sin(yaw);
       let vx = fx * -ay + rx * ax, vy = fz * -ay + rz * ax; const mag = Math.hypot(vx, vy);
@@ -821,7 +824,7 @@ export async function startGame({ name, preset, code, online }) {
   let p = load('profile', null);
   if (!p || p.preset !== preset) p = DEFAULT_PROFILE(preset, name);
   p.name = name || p.name || (preset === 'him' ? 'Him' : 'Her');
-  await faceReady; applyFace(p.app);
+  await faceReady; applyFace(p.app); await humansP;
   G.profile = p; saveProfile();
   makeMe();
   UI.loading(true);
