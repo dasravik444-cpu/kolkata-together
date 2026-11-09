@@ -14,7 +14,8 @@ import { View, preview3d } from './render3d.js';
 import { M } from './models.js';
 import { registerFace, FACES, loadPhotos } from './textures.js';
 import { initHumans } from './human.js';
-const humansP = Promise.all([initHumans(), loadPhotos()]);
+import { loadRealModels } from './realmodels.js';
+const humansP = Promise.all([initHumans(), loadPhotos(), loadRealModels()]);
 
 /* ---------- my face photo (stored only in this browser, shared peer-to-peer) ---------- */
 let myFace = null;

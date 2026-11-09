@@ -4,6 +4,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { ITEM } from '../js/data.js';
 import { mulberry, shade } from '../js/util.js';
+import { hasReal, realAnimal, realHeli, realCar } from './realmodels.js';
 import { faceTexture, photoFaceTexture, strandTexture, FACE, pattern, barkTexture, signTexture } from './textures.js';
 
 export const M = 0.125; // metres per sim pixel (16 px tile = 2 m)
@@ -320,14 +321,17 @@ function extrudeProfile(pts, L, W, bevel = 0.06, smooth = true, taperFrom = 0.8,
   g.computeVertexNormals(); return g;
 }
 const vehCache = {};
+const REAL_CAR = { sports_red: 'car_gallardo', sports_lime: 'car_gallardo', sports_blue: 'car_718', sports_orange: 'car_718', sports_black: 'car_718' };
 export function buildVehicle(type) {
   const spec = VEH[type] || VEH.sedan;
+  if (REAL_CAR[type] && hasReal(REAL_CAR[type])) return realCar(REAL_CAR[type], spec.col);
   if (!vehCache[type]) vehCache[type] = compact(makeVehicle(type, spec));
   const g = vehCache[type].clone(true);
   g.userData.wheels = []; g.userData.lights = [];
   g.userData.horse = null;
   g.traverse((o) => { if (o.userData.wheel) g.userData.wheels.push(o); if (o.userData.light) g.userData.lights.push(o); if (o.userData.kind === 'horse' && !g.userData.horse) g.userData.horse = o; });
-  if (g.userData.horse) { const h = g.userData.horse; h.userData.legs = h.children.filter((c) => c.isGroup); h.userData.head = null; h.userData.wings = null; }
+  if (g.userData.horse && hasReal('horse')) { const old = g.userData.horse, h = realAnimal('horse'); h.position.copy(old.position); h.quaternion.copy(old.quaternion); h.scale.copy(old.scale); old.parent.add(h); old.parent.remove(old); g.userData.horse = h; }
+  else if (g.userData.horse) { const h = g.userData.horse; h.userData.legs = h.children.filter((c) => c.isGroup); h.userData.head = null; h.userData.wings = null; }
   return g;
 }
 function makeVehicle(type, spec) {
@@ -441,6 +445,7 @@ const AN = {
   giraffe: { L: 2.0, H: 2.4, body: '#e8b048', pat: 'spots', legs: '#d8a040', head: 0.18, neck: 2.6 },
 };
 export function buildAnimal(kind) {
+  const rk = kind === 'dog2' ? 'dog' : kind; if (hasReal(rk) && ['cow', 'horse', 'dog'].includes(rk)) return realAnimal(rk);
   const g = new THREE.Group(); g.userData.kind = kind; g.userData.legs = [];
   if (kind === 'crow' || kind === 'peacock') {
     const bm = mat(kind === 'crow' ? '#18181c' : '#1f4fa8', { r: 0.4 });
@@ -487,6 +492,7 @@ export function buildAnimal(kind) {
   return g;
 }
 export function animateAnimal(g, t, moving, flying) {
+  if (g.userData.real) return g.userData.real(t, moving, flying);
   const L = g.userData.legs;
   if (g.userData.wings) { const f = flying ? Math.sin(t * 25) * 0.8 : 0; g.userData.wings[0].rotation.z = f; g.userData.wings[1].rotation.z = -f; return; }
   L.forEach((l, i) => { l.rotation.x = moving ? Math.sin(t * 8 + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.45 : 0; });
@@ -629,6 +635,7 @@ export { bodyGeo, buildHair, buildGlasses, buildHat, clothMat, it };
 
 /* ================================ HELICOPTER ================================ */
 export function buildHeli(police) {
+  if (hasReal('heli')) return realHeli(police);
   const g = new THREE.Group();
   const paint = new THREE.MeshPhysicalMaterial({ color: police ? '#f2f2f2' : '#c8202a', metalness: 0.5, roughness: 0.3, clearcoat: 1 });
   const dark = mat('#1d1d22', { r: 0.5, m: 0.4 }), glass = new THREE.MeshPhysicalMaterial({ color: '#1a2a38', metalness: 0.3, roughness: 0.05, transparent: true, opacity: 0.85 });

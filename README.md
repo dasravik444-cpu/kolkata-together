@@ -106,6 +106,7 @@ All graphics are original pixel art drawn in code: tiles, buildings, characters,
 
 - **Bodies, skin, clothes, hair, eyes**: built from the assets bundled with [MakeHuman](http://www.makehumancommunity.org) 1.x, which the MakeHuman project releases under **CC0** (public domain). They are baked offline into the compact files in `chars/`.
 - **Movement**: real human motion capture from the [CMU Graphics Lab Motion Capture Database](http://mocap.cs.cmu.edu) (free for any use), retargeted onto the game's skeleton (`js3d/mocapdata.js`). This covers walking, jogging, sprinting, standing idle, talking, waving, punching, kicking, sitting and salsa.
+- **Animals, helicopter, sports cars**: realistic CC-BY 4.0 models (credited in [CREDITS.md](CREDITS.md)), simplified and rigged with procedural walking, grazing and tail motion.
 - **Surfaces**: real photo-scanned asphalt, brick, plaster, cobbles, dirt, grass and roof materials from [Poly Haven](https://polyhaven.com) (CC0), in `tex/`.
 - **Your face**: the photo you pick under "My face" is warped onto the 3D head's skin in your browser. It is never uploaded to this repository.
 
