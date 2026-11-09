@@ -520,14 +520,51 @@ export function treeGeometries(kind, seed = 1) {
     for (let b = 0; b < 3; b++) { const br = new THREE.CylinderGeometry(0.06, 0.12, 1.6, 6); br.translate(0, 0.8, 0); br.rotateZ(0.7); br.rotateY(b * 2.1 + r()); br.translate(0, H * 0.8, 0); trunks.push(br); }
     if (big) for (let k = 0; k < 10; k++) { const a = new THREE.CylinderGeometry(0.03, 0.05, 4.5, 5); a.translate((r() - 0.5) * 7, 2.25, (r() - 0.5) * 7); trunks.push(a); }
     const clusters = big ? 11 : 6 + ((r() * 3) | 0), spread = big ? 4.5 : kind === 'ashoka' ? 1.2 : 2.3;
-    for (let k = 0; k < clusters; k++) { const rad = (big ? 2.2 : 1.3) * (0.7 + r() * 0.5); let s = mergeVertices(new THREE.IcosahedronGeometry(rad, 2)); jitter(s, rad * 0.3, seed * 31 + k); s.computeVertexNormals(); s.translate((r() - 0.5) * spread * 2, H + (kind === 'ashoka' ? k * 0.9 : 0.6 + r() * 1.6), (r() - 0.5) * spread * 2); leaves.push(s); }
+    for (let k = 0; k < clusters; k++) {
+      const rad = (big ? 2.2 : 1.3) * (0.7 + r() * 0.5); const cx = (r() - 0.5) * spread * 2, cy = H + (kind === 'ashoka' ? k * 0.9 : 0.6 + r() * 1.6), cz = (r() - 0.5) * spread * 2;
+      // dense inner volume (leaf-textured, so its silhouette is ragged) ...
+      let s = mergeVertices(new THREE.IcosahedronGeometry(rad * 0.78, 1)); jitter(s, rad * 0.25, seed * 31 + k); s = s.toNonIndexed(); s.computeVertexNormals(); s.translate(cx, cy, cz); leaves.push(s);
+      // ... wrapped in alpha-cut leaf cards with normals pointing out of the canopy (soft, volumetric light)
+      for (let q = 0; q < (big ? 12 : 8); q++) {
+        const pl = new THREE.PlaneGeometry(rad * 1.15, rad * 1.15).toNonIndexed();
+        const dir = new THREE.Vector3(r() - 0.5, r() * 0.9 - 0.25, r() - 0.5).normalize();
+        pl.rotateX((r() - 0.5) * 2.4); pl.rotateY(r() * Math.PI * 2); pl.rotateZ((r() - 0.5) * 1.2);
+        pl.translate(dir.x * rad * 0.8, dir.y * rad * 0.7, dir.z * rad * 0.8);
+        const nn = pl.attributes.normal, pp = pl.attributes.position; for (let i = 0; i < nn.count; i++) { const v = new THREE.Vector3(pp.getX(i), pp.getY(i) * 1.3, pp.getZ(i)).normalize(); nn.setXYZ(i, v.x, v.y, v.z); }
+        pl.translate(cx, cy, cz); leaves.push(pl);
+      }
+    }
   }
   const tg = mergeGeometries(trunks.map((g) => g.index ? g.toNonIndexed() : g)); const lg = mergeGeometries(leaves);
   const cols = kind === 'palm' ? ['#3a7a2a', '#4f9a34', '#2f6a22'] : kind === 'banyan' ? ['#2a5a22', '#346a2a', '#3f7a30'] : ['#3a7224', '#4a8a2e', '#5a9a38', '#2f6220'];
   colorize(lg, cols, seed, kind === 'krishnachura' ? '#e8401e' : null, 0.35);
   return { trunk: tg, leaves: lg };
 }
-export const LEAF_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: false });
+function leafCards() { // canvas of overlapping leaves with alpha (tinted by vertex colour)
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); const r = mulberry(77);
+  for (let i = 0; i < 260; i++) {
+    const x = 20 + r() * 216, y = 20 + r() * 216; const d = Math.hypot(x - 128, y - 128); if (d > 118 && r() < 0.8) continue;
+    const l = 10 + r() * 12, w = l * (0.38 + r() * 0.15), a = r() * Math.PI * 2, v = 150 + r() * 105;
+    g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = `rgb(${v * 0.92 | 0},${v | 0},${v * 0.85 | 0})`;
+    g.beginPath(); g.moveTo(-l / 2, 0); g.quadraticCurveTo(0, -w, l / 2, 0); g.quadraticCurveTo(0, w, -l / 2, 0); g.fill();
+    g.strokeStyle = 'rgba(60,70,40,0.5)'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(-l / 2, 0); g.lineTo(l / 2, 0); g.stroke(); g.restore();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+export const WIND = { value: 0 };
+export const LEAF_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, map: leafCards(), alphaTest: 0.45, side: THREE.DoubleSide });
+LEAF_MAT.onBeforeCompile = (sh) => { // wind: canopy sways, more at the top, phase varies per tree
+  sh.uniforms.uWind = WIND;
+  sh.vertexShader = 'uniform float uWind;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+  #ifdef USE_INSTANCING
+  float ph = instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.23;
+  #else
+  float ph = 0.0;
+  #endif
+  float hgt = max(0.0, position.y - 1.5);
+  transformed.x += sin(uWind * 1.3 + ph + position.y * 0.35) * 0.045 * hgt + sin(uWind * 4.1 + ph * 3.0 + position.x) * 0.012 * hgt;
+  transformed.z += cos(uWind * 1.1 + ph * 1.3) * 0.03 * hgt;`);
+};
 export const BARK_MAT = new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 0.95 });
 
 /* ================================ PROPS (merged single geometries) ================================ */

@@ -7,6 +7,9 @@ import { groundTexture, groundNormal, facade, shopfront, roofTexture, signTextur
 import { M, mat, treeGeometries, LEAF_MAT, BARK_MAT, propGeometry, PROP_MAT, buildVehicle } from './models.js';
 
 export const TS = 2; // metres per tile
+// raised walkable ground (landmark plinths, steps) so people stand on top instead of sinking in
+let LIFT = null, LIFT_W = 0;
+function liftRect(x0, z0, x1, z1, h) { if (!LIFT) return; for (let tz = Math.floor(z0 / TS); tz < Math.ceil(z1 / TS); tz++) for (let tx = Math.floor(x0 / TS); tx < Math.ceil(x1 / TS); tx++) { const i = tz * LIFT_W + tx; if (i >= 0 && i < LIFT.length) LIFT[i] = Math.max(LIFT[i], typeof h === 'function' ? h(tz * TS + TS / 2) : h); } }
 const SIDEWALK_H = 0.16;
 
 /* ------------------------------ batching ------------------------------ */
@@ -191,7 +194,8 @@ function landmark(b, root, B, lamps) {
     case 'victoria': {
       const mm = MARBLE(); mm.map = mm.map.clone(); mm.map.repeat.set(6, 3); mm.map.needsUpdate = true;
       const arch = facadeMat('colonial', '#f2efe6', 5, '#e8e4dc');
-      add(new THREE.BoxGeometry(W + 4, 1.4, D + 4), mm, cx, 0.7, cz);
+      add(new THREE.BoxGeometry(W + 4, 1.4, D + 4), mm, cx, 0.7, cz); liftRect(cx - W / 2 - 2, cz - D / 2 - 2, cx + W / 2 + 2, cz + D / 2 + 2, 1.4);
+      liftRect(cx - 7, z0 + D + 2, cx + 7, z0 + D + 6.8, (z) => Math.max(0, 1.4 - (z - (z0 + D + 2)) * 0.29));
       for (let k = 0; k < 4; k++) add(new THREE.BoxGeometry(14 - k * 0.0, 0.3, 1.2), mm, cx, 0.15 + k * 0.3, z0 + D + 2 + 1.2 * (3 - k));
       const body = add(new THREE.BoxGeometry(W - 6, 12, D - 6), arch, cx, 7.4, cz); body.material = arch;
       for (const sx of [-1, 1]) add(new THREE.BoxGeometry(10, 14, D - 2), arch, cx + sx * (W / 2 - 7), 8.4, cz);
@@ -371,6 +375,7 @@ function streetLamps(world, root, lamps) {
 
 /* ------------------------------ public ------------------------------ */
 export function buildCity(world) {
+  LIFT = new Float32Array(world.W * world.H); LIFT_W = world.W;
   const root = new THREE.Group(); root.name = 'city';
   const lamps = [];
   const waters = buildGround(world, root);
@@ -389,10 +394,10 @@ export function buildCity(world) {
   for (let i = 0; i < 70; i++) { const h = 6 + r() * 28, w = 8 + r() * 14; HB.add(new THREE.BoxGeometry(w, h, w), facadeMat(r() < 0.3 ? 'tower' : 'house', ['#d8c8b0', '#c8b8a8', '#e0d0b8', '#b8b0a8'][i % 4], i, '#5a7a6a'), mtx(-320 + r() * 160, h / 2, -200 + i * 14, 0)); }
   HB.build(root);
   // roof heights per tile, used to keep helicopters out of buildings
-  const hgrid = new Float32Array(world.W * world.H);
+  const hgrid = new Float32Array(world.W * world.H); for (let i = 0; i < hgrid.length; i++) hgrid[i] = Math.max(hgrid[i], LIFT[i]);
   const LH = { victoria: 37, minar: 48, cathedral: 38, planetarium: 15, stadium: 33, bridge: 60, fort: 6, tent: 7, newmarket: 22, stall: 3, gate: 6 };
   for (const b of world.buildings) { const h = LH[b.style] ?? (Math.max(2, (b.floors || 2) + (b.style === 'tower' ? 2 : 0) + (b.style === 'house' ? 1 : 0)) * FLOOR_H + 3); for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) hgrid[y * world.W + x] = Math.max(hgrid[y * world.W + x], h); }
-  return { root, lamps, waters, nightMats, hgrid };
+  const lift = LIFT; LIFT = null; return { root, lamps, waters, nightMats, hgrid, lift };
 }
 
 /* ------------------------------ interiors ------------------------------ */

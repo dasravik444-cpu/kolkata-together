@@ -106,6 +106,7 @@ All graphics are original pixel art drawn in code: tiles, buildings, characters,
 
 - **Bodies, skin, clothes, hair, eyes**: built from the assets bundled with [MakeHuman](http://www.makehumancommunity.org) 1.x, which the MakeHuman project releases under **CC0** (public domain). They are baked offline into the compact files in `chars/`.
 - **Movement**: real human motion capture from the [CMU Graphics Lab Motion Capture Database](http://mocap.cs.cmu.edu) (free for any use), retargeted onto the game's skeleton (`js3d/mocapdata.js`). This covers walking, jogging, sprinting, standing idle, talking, waving, punching, kicking, sitting and salsa.
+- **Surfaces**: real photo-scanned asphalt, brick, plaster, cobbles, dirt, grass and roof materials from [Poly Haven](https://polyhaven.com) (CC0), in `tex/`.
 - **Your face**: the photo you pick under "My face" is warped onto the 3D head's skin in your browser. It is never uploaded to this repository.
 
 The two playable characters are based on the reference photos. He has brown skin, black swept-back hair, rectangular glasses, a trimmed beard, a pinstripe shirt with satin waistcoat, tie and lapel pin. She has fair skin, long dark-brown hair, kohl eyeliner, jhumkas and a mustard kurta with gold zari and a dupatta, and is drawn slightly shorter.

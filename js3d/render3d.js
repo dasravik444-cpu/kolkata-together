@@ -6,7 +6,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { M, buildVehicle, buildAnimal, animateAnimal, mat, VEH_SPEC, buildHeli } from './models.js';
+import { M, buildVehicle, buildAnimal, animateAnimal, mat, VEH_SPEC, buildHeli, WIND } from './models.js';
 import { Character as Human, setBodyDetail } from './body.js';
 import { onHumanAsset } from './human.js';
 import { buildCity, buildInterior3D, heightAt, TS, GLOW_MAT } from './world3d.js';
@@ -61,6 +61,7 @@ export class View {
     }
     this.vis = new Map(); this.fullSet = new Set(); this.t = 0;
     this.stars = makeStars(); S.add(this.stars);
+    this.clouds = makeClouds(); S.add(this.clouds); this.birds = makeBirds(); S.add(this.birds.mesh);
     this.resize(); addEventListener('resize', () => this.resize());
   }
   resize() {
@@ -146,11 +147,13 @@ export class View {
     const cx = Math.round(tx / snap) * snap, cz = Math.round(tz / snap) * snap;
     this.sun.position.set(cx + sd.x * 150, sd.y * 150, cz + sd.z * 150); this.sun.target.position.set(cx, 0, cz);
   }
-  groundY(S, px, py) { const tx = Math.floor(px / 16), ty = Math.floor(py / 16); if (tx < 0 || ty < 0 || tx >= S.W || ty >= S.H) return 0; return S.kind === 'world' ? Math.max(0, heightAt(S, tx, ty)) : 0; }
+  groundY(S, px, py) { const tx = Math.floor(px / 16), ty = Math.floor(py / 16); if (tx < 0 || ty < 0 || tx >= S.W || ty >= S.H) return 0; return S.kind === 'world' ? Math.max(0, heightAt(S, tx, ty), this.city && this.city.lift ? this.city.lift[ty * S.W + tx] : 0) : 0; }
 
   /* ------------------------------ entities ------------------------------ */
   sync(G, dt) {
-    this.t += dt;
+    this.t += dt; WIND.value = this.t;
+    if (this.clouds) { const cm = this.clouds.material; cm.map.offset.x += dt * 0.0016; cm.map.offset.y += dt * 0.0007; cm.opacity = this.inside ? 0 : 0.85 - (this.night || 0) * 0.55; this.clouds.position.set(G.me.x * M, 520, G.me.y * M); this.clouds.visible = !this.inside; }
+    if (this.birds) { const b = this.birds; b.mesh.visible = !this.inside && (this.night || 0) < 0.6; if (b.mesh.visible) updateBirds(b, this.t, G.me.x * M, G.me.y * M); }
     const me = G.me, S = G.scene; const live = new Set();
     const px = me.x, py = me.y; const drawPx = this.q.draw / M; const air = !!(me.heli && me.heli.alt > 12); this.air = air;
     const near = (e, r) => Math.abs(e.x - px) < r && Math.abs(e.y - py) < r;
@@ -286,6 +289,40 @@ export function preview3d(target, app) {
   target.width = 384; target.height = 576; const g = target.getContext('2d'); g.clearRect(0, 0, 384, 576); g.drawImage(previewR.domElement, 0, 0);
 }
 
+// a high, slowly drifting cloud layer (procedural fbm, alpha) that follows the player
+function makeClouds() {
+  const N = 256, c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d'); const img = g.createImageData(N, N);
+  const rnd = (x, y, s) => { const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return h - Math.floor(h); };
+  const noise = (x, y, f, s) => { const X = Math.floor(x * f), Y = Math.floor(y * f), fx = x * f - X, fy = y * f - Y; const w = (t) => t * t * (3 - 2 * t); const m = f; const v = (a, b) => rnd(((a % m) + m) % m, ((b % m) + m) % m, s);
+    return (v(X, Y) * (1 - w(fx)) + v(X + 1, Y) * w(fx)) * (1 - w(fy)) + (v(X, Y + 1) * (1 - w(fx)) + v(X + 1, Y + 1) * w(fx)) * w(fy); };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N; let n = 0, a = 0.5; for (let o = 0; o < 5; o++) { n += noise(u, v, 4 << o, o) * a; a *= 0.5; }
+    const d = Math.max(0, Math.min(1, (n - 0.5) * 3.2)); const i = (y * N + x) * 4; const sh = 235 - d * 40;
+    img.data[i] = sh; img.data[i + 1] = sh; img.data[i + 2] = sh + 8; img.data[i + 3] = d * 235;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(5, 5); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, fog: false, opacity: 0.85, side: THREE.DoubleSide }));
+  m.rotation.x = Math.PI / 2; m.renderOrder = -1; m.frustumCulled = false; return m;
+}
+// flocks of birds wheeling over the city (instanced, wings flap by vertex scaling)
+function makeBirds() {
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.15, -0.55, 0.12, -0.1, 0, 0, -0.15, 0, 0, 0.15, 0.55, 0.12, -0.1, 0, 0, -0.15], 3)); g.computeVertexNormals();
+  const n = 36, mesh = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: '#1e1c22', side: THREE.DoubleSide, fog: true }), n); mesh.frustumCulled = false;
+  const birds = []; for (let i = 0; i < n; i++) birds.push({ f: i % 3, a: Math.random() * 6.28, r: 3 + Math.random() * 9, h: Math.random() * 6, ph: Math.random() * 6.28 });
+  return { mesh, birds, o: new THREE.Object3D(), centers: [0, 1, 2].map((k) => ({ x: 0, z: 0, set: false, k })) };
+}
+function updateBirds(B, t, px, pz) {
+  for (const c of B.centers) { if (!c.set || Math.hypot(c.x - px, c.z - pz) > 220) { c.x = px + (Math.random() - 0.5) * 200; c.z = pz + (Math.random() - 0.5) * 200; c.set = true; } c.x += Math.sin(t * 0.05 + c.k) * 0.05; }
+  const o = B.o;
+  B.birds.forEach((b, i) => {
+    const c = B.centers[b.f], ang = b.a + t * (0.25 + b.f * 0.05); const R = 26 + b.f * 10 + b.r;
+    o.position.set(c.x + Math.cos(ang) * R, 45 + b.f * 12 + b.h + Math.sin(t * 0.7 + b.ph) * 2, c.z + Math.sin(ang) * R);
+    o.rotation.set(0, -ang, Math.sin(t + b.ph) * 0.2); const flap = 0.35 + Math.abs(Math.sin(t * 9 + b.ph)) * 1.1; o.scale.set(1, flap, 1);
+    o.updateMatrix(); B.mesh.setMatrixAt(i, o.matrix);
+  });
+  B.mesh.instanceMatrix.needsUpdate = true;
+}
 function makeStars() {
   const n = 1500, p = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { const v = new THREE.Vector3().randomDirection(); v.y = Math.abs(v.y) + 0.05; v.normalize().multiplyScalar(2500); p.set([v.x, v.y, v.z], i * 3); }
