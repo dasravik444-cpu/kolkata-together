@@ -76,10 +76,27 @@ export function normalFromCanvas(c, strength = 2) {
 }
 
 /* ---------------------------- ground ---------------------------- */
+/* ---- real photo-scanned surfaces (Poly Haven, CC0) used as tinted base layers ---- */
+export const PHOTO = {};
+export function loadPhotos() {
+  const base = new URL('../tex/', import.meta.url).href;
+  return Promise.all(['asphalt', 'brick', 'cobble', 'dirt', 'grass', 'roof', 'plaster', 'plaster_red'].map((n) => new Promise((res) => {
+    const im = new Image(); im.onload = () => { PHOTO[n] = im; res(); }; im.onerror = () => res(); im.src = base + n + '.webp';
+  })));
+}
+// draw a photo layer tiled `rep` times, optionally multiplied by a tint colour
+function photo(g, name, w, h, { rep = 1, tint = null, alpha = 1, ox = 0, oy = 0 } = {}) {
+  const im = PHOTO[name]; if (!im) return false;
+  g.save(); g.globalAlpha = alpha; const tw = w / rep, th = h / rep;
+  for (let y = -1; y <= rep; y++) for (let x = -1; x <= rep; x++) g.drawImage(im, x * tw + (ox % tw), y * th + (oy % th), tw, th);
+  if (tint) { g.globalCompositeOperation = 'multiply'; g.globalAlpha = 1; g.fillStyle = tint; g.fillRect(0, 0, w, h); }
+  g.restore(); return true;
+}
 const S = 256; // pixels per 2 m tile
 const groundCache = {};
 function asphalt(seed = 1) {
   const c = cv(S), g = c.getContext('2d');
+  if (photo(g, 'asphalt', S, S, { tint: '#9a9ca4', ox: seed * 97, oy: seed * 61 })) { const r = mulberry(seed + 5); g.fillStyle = `rgba(20,20,24,${0.08 + r() * 0.08})`; g.beginPath(); g.ellipse(r() * S, r() * S, 30 + r() * 40, 14 + r() * 20, r() * 3, 0, 7); g.fill(); return c; }
   noiseFill(g, S, S, '#3a3b40', '#55565c', fbm(S, S, seed, 64, 5), 1.6);
   speckle(g, S, S, 1400, ['#6a6b70', '#2a2b2f', '#77777c', '#45464b'], 1.4, seed);
   const r = mulberry(seed + 5);
@@ -106,7 +123,7 @@ export function groundTexture(kind) {
     case 'tram': c = paint(asphalt(10), (g) => { for (const y of [60, 196]) { g.fillStyle = '#2a2a2e'; g.fillRect(0, y - 8, S, 16); g.fillStyle = '#b8bcc4'; g.fillRect(0, y - 3, S, 6); } }); break;
     case 'bridge': { c = cv(S); const g = c.getContext('2d'); noiseFill(g, S, S, '#8a8b90', '#a4a5aa', fbm(S, S, 11, 32, 4), 1.2); g.fillStyle = '#6a6b70'; for (let x = 0; x < S; x += 64) g.fillRect(x, 0, 3, S); break; }
     case 'sidewalk': {
-      c = cv(S); const g = c.getContext('2d'); noiseFill(g, S, S, '#a9a49a', '#c8c3b8', fbm(S, S, 12, 32, 4), 1.4);
+      c = cv(S); const g = c.getContext('2d'); noiseFill(g, S, S, '#a9a49a', '#c8c3b8', fbm(S, S, 12, 32, 4), 1.4); photo(g, 'plaster', S, S, { rep: 2, tint: '#d4cfc4', alpha: 0.85 });
       const r = mulberry(12);
       for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { const v = (r() - 0.5) * 0.12; g.fillStyle = v > 0 ? `rgba(255,255,255,${v})` : `rgba(0,0,0,${-v})`; g.fillRect(x * 64 + 2, y * 64 + 2, 60, 60); }
       g.fillStyle = '#7d786f'; for (let i = 0; i <= 4; i++) { g.fillRect(i * 64 - 1, 0, 3, S); g.fillRect(0, i * 64 - 1, S, 3); }
@@ -118,6 +135,7 @@ export function groundTexture(kind) {
       c = cv(S); const g = c.getContext('2d');
       const pal = { grass: ['#3f7a2a', '#6aa43c'], tallgrass: ['#356a24', '#5a9432'], flowers: ['#3f7a2a', '#6aa43c'], pitchA: ['#3f8a2e', '#5aa63e'], pitchB: ['#4c9a36', '#68b448'], fairway: ['#4a9a34', '#70b84a'], green: ['#5aae3e', '#7cc858'] }[kind];
       noiseFill(g, S, S, pal[0], pal[1], fbm(S, S, kind.length * 7, 64, 5), 1.5);
+      if (PHOTO.grass) { g.save(); g.globalCompositeOperation = 'overlay'; photo(g, 'grass', S, S, { alpha: 0.9 }); g.restore(); }
       const r = mulberry(kind.length * 13); const blades = kind === 'tallgrass' ? 2600 : 1800;
       for (let i = 0; i < blades; i++) { const x = r() * S, y = r() * S, l = (kind === 'tallgrass' ? 10 : 5) + r() * 6; g.strokeStyle = r() < 0.5 ? shade(pal[1], 0.12 + r() * 0.15) : shade(pal[0], -0.2); g.lineWidth = 1.2; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (r() - 0.5) * 4, y - l); g.stroke(); }
       if (kind === 'flowers') for (let i = 0; i < 40; i++) { g.fillStyle = ['#f05a7a', '#ffd94a', '#ffffff', '#ff9a3c', '#c86af0'][(r() * 5) | 0]; const x = r() * S, y = r() * S; for (let p = 0; p < 5; p++) { g.beginPath(); g.arc(x + Math.cos(p * 1.26) * 3, y + Math.sin(p * 1.26) * 3, 2.6, 0, 7); g.fill(); } g.fillStyle = '#ffe680'; g.beginPath(); g.arc(x, y, 2, 0, 7); g.fill(); }
@@ -128,11 +146,13 @@ export function groundTexture(kind) {
       c = cv(S); const g = c.getContext('2d');
       const pal = { path: ['#b8a070', '#d8c498'], dirt: ['#8a6a42', '#b08a5a'], track: ['#8a5a36', '#b07a4c'], sand: ['#d8c288', '#f0e0b0'] }[kind];
       noiseFill(g, S, S, pal[0], pal[1], fbm(S, S, kind.length * 31, 64, 5), 1.4);
+      if (PHOTO.dirt) { g.save(); g.globalCompositeOperation = 'overlay'; photo(g, 'dirt', S, S, { alpha: 0.9 }); g.restore(); }
       speckle(g, S, S, 1600, [shade(pal[0], -0.25), shade(pal[1], 0.15), '#ffffff22'], 1.6, kind.length);
       break;
     }
     case 'plaza': {
       c = cv(S); const g = c.getContext('2d'); noiseFill(g, S, S, '#b9ad94', '#d8ccb2', fbm(S, S, 41, 32, 4), 1.3);
+      if (photo(g, 'cobble', S, S, { rep: 2, tint: '#f0e6d2' })) break;
       const r = mulberry(41); for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) { g.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '0,0,0'},${r() * 0.08})`; g.fillRect(x * 128 + 3, y * 128 + 3, 122, 122); }
       g.fillStyle = '#8f8570'; for (let i = 0; i <= 2; i++) { g.fillRect(i * 128 - 2, 0, 4, S); g.fillRect(0, i * 128 - 2, S, 4); }
       break;
@@ -204,7 +224,9 @@ export function facade(style, wall, seed = 1, shutter = '#3f7a4a') {
   } else {
     const n = fbm(W, H, seed * 3 + 1, 64, 5);
     noiseFill(g, W, H, shade(wall, -0.1), shade(wall, 0.06), n, 1.3);
-    if (style === 'brick') { for (let y = 0; y < H; y += 12) for (let x = (y / 12) % 2 ? 0 : 14; x < W; x += 28) { g.fillStyle = `rgba(${90 + r() * 40},${30 + r() * 20},20,0.35)`; g.fillRect(x, y, 26, 10); } g.fillStyle = 'rgba(230,220,200,0.25)'; for (let y = 0; y < H; y += 12) g.fillRect(0, y + 10, W, 2); }
+    if (style === 'brick' && photo(g, 'brick', W, H, { rep: 4, tint: shade(wall, 0.5) })) { /* real brick */ }
+    else if (photo(g, seed % 4 === 1 ? 'plaster_red' : 'plaster', W, H, { rep: 2, tint: seed % 4 === 1 ? shade(wall, 0.35) : shade(wall, 0.12), ox: seed * 53 })) { /* real plaster */ }
+    else if (style === 'brick') { for (let y = 0; y < H; y += 12) for (let x = (y / 12) % 2 ? 0 : 14; x < W; x += 28) { g.fillStyle = `rgba(${90 + r() * 40},${30 + r() * 20},20,0.35)`; g.fillRect(x, y, 26, 10); } g.fillStyle = 'rgba(230,220,200,0.25)'; for (let y = 0; y < H; y += 12) g.fillRect(0, y + 10, W, 2); }
     for (let f = 0; f < 2; f++) {
       const y = f * fh;
       // cornice / floor band
@@ -267,7 +289,7 @@ export function shopfront(wall, awning, seed = 1) {
 }
 export function roofTexture(col = '#8a8478') {
   if (facadeCache['roof' + col]) return facadeCache['roof' + col];
-  const c = cv(256), g = c.getContext('2d'); noiseFill(g, 256, 256, shade(col, -0.25), shade(col, 0.05), fbm(256, 256, 101, 32, 5), 1.6);
+  const c = cv(256), g = c.getContext('2d'); noiseFill(g, 256, 256, shade(col, -0.25), shade(col, 0.05), fbm(256, 256, 101, 32, 5), 1.6); g.globalAlpha = 0.5; photo(g, 'plaster', 256, 256, { rep: 2, tint: shade(col, 0.3) }); g.globalAlpha = 1;
   speckle(g, 256, 256, 500, ['rgba(0,0,0,0.2)', 'rgba(255,255,255,0.1)'], 2, 7);
   return (facadeCache['roof' + col] = toTex(c));
 }

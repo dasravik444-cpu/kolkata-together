@@ -5,6 +5,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { M, buildVehicle, buildAnimal, animateAnimal, mat, VEH_SPEC, buildHeli } from './models.js';
 import { Character as Human, setBodyDetail } from './body.js';
 import { onHumanAsset } from './human.js';
@@ -19,6 +20,19 @@ export const QUALITY = {
   high: { pr: 1.5, shadow: 2048, bloom: true, lights: 8, aa: true, full: 12, draw: 260 },
 };
 
+// film-style grade after tone mapping: gentle S-curve contrast, saturation, warm highlights / cool shadows, vignette
+const GRADE = {
+  uniforms: { tDiffuse: { value: null }, sat: { value: 1.12 }, con: { value: 0.12 }, vig: { value: 0.28 }, night: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float sat, con, vig, night; varying vec2 vUv;
+  void main(){ vec4 c = texture2D(tDiffuse, vUv); vec3 col = c.rgb;
+    float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col = mix(vec3(l), col, sat);
+    col = mix(col, col * col * (3.0 - 2.0 * col), con);
+    col += (vec3(0.025, 0.012, -0.02) * smoothstep(0.45, 1.0, l) + vec3(-0.012, 0.0, 0.02) * (1.0 - smoothstep(0.0, 0.35, l))) * (1.0 - night);
+    vec2 d = vUv - 0.5; col *= 1.0 - vig * dot(d, d) * 1.6;
+    gl_FragColor = vec4(clamp(col, 0.0, 1.0), c.a); }`,
+};
 export class View {
   constructor(canvas, quality = 'medium') {
     this.q = QUALITY[quality] || QUALITY.medium; this.qname = quality; setBodyDetail(quality);
@@ -29,21 +43,21 @@ export class View {
     setAniso(Math.min(8, R.capabilities.getMaxAnisotropy()));
     const S = (this.scene = new THREE.Scene());
     this.sky = new Sky(); this.sky.scale.setScalar(6000); S.add(this.sky);
-    const u = this.sky.material.uniforms; u.turbidity.value = 2.6; u.rayleigh.value = 1.15; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.82;
+    const u = this.sky.material.uniforms; u.turbidity.value = 1.8; u.rayleigh.value = 1.35; u.mieCoefficient.value = 0.003; u.mieDirectionalG.value = 0.82;
     this.envScene = new THREE.Scene(); this.envSky = new Sky(); this.envSky.scale.setScalar(1000); this.envSky.material = this.sky.material; this.envScene.add(this.envSky);
     this.pmrem = new THREE.PMREMGenerator(R); this.envH = -99;
     this.sun = new THREE.DirectionalLight('#fff2dc', 2.6); this.sun.castShadow = this.q.shadow > 0;
     if (this.q.shadow) { this.sun.shadow.mapSize.set(this.q.shadow, this.q.shadow); Object.assign(this.sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 400 }); this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.03; }
     S.add(this.sun, this.sun.target);
     this.hemi = new THREE.HemisphereLight('#bcd4ff', '#4a5a3a', 0.55); S.add(this.hemi);
-    S.fog = new THREE.FogExp2('#c8d8e8', 0.0024);
+    S.fog = new THREE.FogExp2('#b9cde3', 0.0017);
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.08, 3000);
     this.yaw = 0; this.pitch = 0.32; this.dist = 4.6; this.lastLook = 0;
     this.pool = []; for (let i = 0; i < this.q.lights; i++) { const l = new THREE.PointLight('#ffcf8a', 0, 22, 1.6); S.add(l); this.pool.push(l); }
     this.head = new THREE.SpotLight('#fff4dc', 0, 45, 0.5, 0.5, 1.4); S.add(this.head, this.head.target);
     if (this.q.bloom) {
       this.composer = new EffectComposer(R); this.composer.addPass(new RenderPass(S, this.camera));
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.2, 0.4, 2.2); this.composer.addPass(this.bloom); this.composer.addPass(new OutputPass());
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.2, 0.4, 2.2); this.composer.addPass(this.bloom); this.composer.addPass(new OutputPass()); this.grade = new ShaderPass(GRADE); this.composer.addPass(this.grade);
     }
     this.vis = new Map(); this.fullSet = new Set(); this.t = 0;
     this.stars = makeStars(); S.add(this.stars);
@@ -70,7 +84,7 @@ export class View {
     this.clearVisuals();
     if (this.interiorRoot) { this.scene.remove(this.interiorRoot); this.interiorRoot = null; }
     this.city.root.visible = true; this.sky.visible = true; this.inside = null; this.scene.background = null;
-    this.scene.fog = new THREE.FogExp2('#c8d8e8', 0.0024); this.dist = 4.6; this.pitch = 0.32;
+    this.scene.fog = new THREE.FogExp2('#b9cde3', 0.0017); this.dist = 4.6; this.pitch = 0.32;
   }
   clearVisuals() { for (const [, v] of this.vis) this.scene.remove(v.root || v); this.vis.clear(); }
 
@@ -84,19 +98,20 @@ export class View {
     const night = Math.min(1, Math.max(0, dark / 0.62));
     const moon = sunDir.y < 0;
     this.sunDir = moon ? new THREE.Vector3(-sunDir.x, Math.max(0.35, -sunDir.y), -sunDir.z) : sunDir;
-    this.sun.intensity = this.inside ? 0.9 : moon ? 0.45 : 0.4 + 2.6 * Math.min(1, sunDir.y * 2.5);
+    this.sun.intensity = this.inside ? 0.9 : moon ? 0.45 : 0.4 + 3.4 * Math.min(1, sunDir.y * 2.5);
     this.sun.color.set(moon ? '#8ea0d0' : sunDir.y < 0.25 ? '#ffc890' : '#fff2dc');
-    this.hemi.intensity = this.inside ? 0.5 : 0.2 + 0.2 * (1 - night);
+    this.hemi.intensity = this.inside ? 0.5 : 0.2 + 0.08 * (1 - night);
     this.hemi.color.set(night > 0.5 ? '#4a5f8f' : '#bcd4ff');
-    if (this.scene.fog) this.scene.fog.color.set(night > 0.5 ? '#0b1020' : sunDir.y < 0.2 ? '#e8c8a8' : '#c8d8e8');
+    if (this.scene.fog) this.scene.fog.color.set(night > 0.5 ? '#0b1020' : sunDir.y < 0.2 ? '#e0bfa0' : '#b9cde3');
     this.stars.visible = !this.inside && night > 0.4; this.stars.material.opacity = night;
     if (this.bloom) { this.bloom.strength = this.inside ? 0.15 : 0.1 + night * 0.4; this.bloom.threshold = this.inside ? 1.8 : 2.6 - night * 1.3; }
-    this.renderer.toneMappingExposure = this.inside ? 0.62 : 0.68 + night * 0.22;
+    this.renderer.toneMappingExposure = this.inside ? 0.62 : 0.54 + night * 0.34;
+    if (this.grade) { this.grade.uniforms.night.value = night; this.grade.uniforms.sat.value = this.inside ? 1.06 : 1.12 - night * 0.08; }
     GLOW_MAT.opacity = this.inside ? 0 : night * 0.55;
     const mats = this.city ? this.city.nightMats : [];
     for (const m of mats) m.emissiveIntensity = (m.userData.dayI || 0) + ((m.userData.nightI ?? 1) - (m.userData.dayI || 0)) * night;
     if (Math.abs(h - this.envH) > 0.4 && !this.inside) { this.envH = h; if (this.envRT) this.envRT.dispose(); this.envRT = this.pmrem.fromScene(this.envScene); this.scene.environment = this.envRT.texture; }
-    this.scene.environmentIntensity = this.inside ? 0.2 : 0.06 + 0.3 * (1 - night);
+    this.scene.environmentIntensity = this.inside ? 0.2 : 0.06 + 0.16 * (1 - night);
     this.night = night;
   }
   updateLights(px, pz) {

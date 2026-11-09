@@ -12,9 +12,9 @@ import { sfx, unlockAudio } from '../js/audio.js';
 import * as UI from '../js/ui.js';
 import { View, preview3d } from './render3d.js';
 import { M } from './models.js';
-import { registerFace, FACES } from './textures.js';
+import { registerFace, FACES, loadPhotos } from './textures.js';
 import { initHumans } from './human.js';
-const humansP = initHumans();
+const humansP = Promise.all([initHumans(), loadPhotos()]);
 
 /* ---------- my face photo (stored only in this browser, shared peer-to-peer) ---------- */
 let myFace = null;
