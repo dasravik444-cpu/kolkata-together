@@ -188,3 +188,20 @@ canvas#game.three { image-rendering: auto; }
 #actmenu button i { font-style: normal; font-size: 26px; line-height: 1; }
 #actmenu button b { position: absolute; top: 3px; right: 6px; font-size: 11px; opacity: .6; }
 @media (max-width: 640px) { #actmenu { bottom: 250px; } #actmenu button { min-width: 62px; } }
+
+/* ---- run button (Free Fire / BGMI style) ---- */
+#tbtns .runbtn { background: #f2a33a; color: #1b1205; font-size: 22px; line-height: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#tbtns .runbtn small { font-size: 10px; font-weight: 800; letter-spacing: .5px; }
+#tbtns .runbtn.on { background: #ff6a1a; color: #fff; box-shadow: 0 0 0 4px rgba(255,170,60,.55), 0 0 18px rgba(255,120,30,.8); }
+#autorun { position: fixed; left: 34px; bottom: 172px; z-index: 21; background: rgba(255,106,26,.92); color: #fff; font: 800 12px sans-serif; padding: 6px 10px; border-radius: 14px; letter-spacing: .5px; pointer-events: none; }
+#stick.lockzone::after { content: '🔒'; position: absolute; left: 50%; top: -34px; transform: translateX(-50%); font-size: 22px; filter: drop-shadow(0 2px 3px #000); }
+@media (max-width: 640px) { #autorun { bottom: 196px; left: 20px; } }
+/* ---- map button + full map ---- */
+#btn-map { position: fixed; top: 118px; right: 14px; z-index: 6; font-weight: 800; cursor: pointer; }
+#bigmap { position: fixed; inset: 0; z-index: 55; background: #0d1410; touch-action: none; }
+#bigmap-cv { width: 100%; height: 100%; display: block; cursor: crosshair; }
+#bigmap-bar { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 12px; align-items: center; padding: 10px 14px; background: linear-gradient(#000c, #0000); color: #fff; font: 13px sans-serif; }
+#bigmap-bar b { font-size: 16px; letter-spacing: 2px; }
+#bigmap-bar span { opacity: .8; flex: 1; }
+#bigmap-close { font-size: 20px; width: 42px; height: 42px; border-radius: 50%; border: 0; background: #fff; color: #111; cursor: pointer; }
+#radar { pointer-events: auto; cursor: pointer; }

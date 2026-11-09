@@ -60,7 +60,7 @@ export function saveProfile() { save('profile', G.profile); }
 
 /* ============================== input ============================== */
 const keys = new Set(), pressed = new Set();
-const KEYMAP = { arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down', arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right', shift: 'shift', e: 'e', enter: 'enter', f: 'f', ' ': 'space', q: 'q', p: 'p', t: 't', c: 'c', m: 'm', v: 'v', h: 'h', escape: 'esc', tab: 'p', g: 'g' };
+const KEYMAP = { r: 'run', arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down', arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right', shift: 'shift', e: 'e', enter: 'enter', f: 'f', ' ': 'space', q: 'q', p: 'p', t: 't', c: 'c', m: 'm', v: 'v', h: 'h', escape: 'esc', tab: 'p', g: 'g' };
 addEventListener('keydown', (ev) => {
   const k = KEYMAP[ev.key.toLowerCase()];
   if (document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) { if (k === 'esc') { document.activeElement.blur(); UI.closeTop(); } return; }
@@ -72,7 +72,7 @@ addEventListener('keydown', (ev) => {
 addEventListener('keyup', (ev) => { const k = KEYMAP[ev.key.toLowerCase()]; if (k) keys.delete(k); });
 addEventListener('blur', () => keys.clear());
 export function virtualKey(k, down) { if (down) { if (!keys.has(k)) pressed.add(k); keys.add(k); } else keys.delete(k); }
-export const touchDir = { x: 0, y: 0 };
+export const touchDir = { x: 0, y: 0, lock: false };
 
 /* ============================== scenes ============================== */
 function setScene(S, x, y, dir) {
@@ -503,13 +503,16 @@ function update(dt) {
 
   const modal = UI.isOpen();
   const ix = (keys.has('right') ? 1 : 0) - (keys.has('left') ? 1 : 0) + touchDir.x;
-  const iy = (keys.has('down') ? 1 : 0) - (keys.has('up') ? 1 : 0) + touchDir.y;
+  let iy = (keys.has('down') ? 1 : 0) - (keys.has('up') ? 1 : 0) + touchDir.y;
+  // sprint toggle (RUN button / R key) and joystick auto-run lock, like Free Fire / BGMI
+  if (pressed.has('run')) { G.sprintLock = !G.sprintLock; const rb = document.getElementById('runbtn'); if (rb) rb.classList.toggle('on', G.sprintLock); UI.toast(G.sprintLock ? 'Sprint ON' : 'Sprint OFF'); }
+  if (touchDir.lock && Math.abs(touchDir.x) < 0.05 && Math.abs(touchDir.y) < 0.05 && !(keys.has('up') || keys.has('down'))) iy = -1;
+  if (pressed.has('m') || pressed.has('esc')) { if (bigMapOpen()) { closeBigMap(); pressed.delete('m'); pressed.delete('esc'); } else if (pressed.has('m') && !UI.isOpen()) { openBigMap(); pressed.delete('m'); } }
 
   if (!modal && !G.frozen) {
     if (pressed.has('p')) UI.phone();
     if (pressed.has('t')) UI.chat(true);
     if (pressed.has('c')) UI.selfie();
-    if (pressed.has('m')) UI.phone('map');
     if (pressed.has('v')) UI.toggleCall();
     if (pressed.has('h')) UI.help();
     if (pressed.has('q')) cycleWeapon();
@@ -534,7 +537,7 @@ function update(dt) {
       if (pressed.has('e')) { if (me.state === 'dance') { me.state = 'walk'; sendState(true); } else standUp(); }
       else if ((ix || iy) && me.state === 'dance') { me.state = 'walk'; }
     } else if (me.state !== 'ko') {
-      const run = keys.has('shift');
+      const run = keys.has('shift') || G.sprintLock || touchDir.lock;
       let sp = me.state === 'boat' ? 30 : me.state === 'swim' ? 12 : run ? 40 : 13;
       const ax = clamp(ix, -1, 1), ay = clamp(iy, -1, 1);
       const yaw = view.yaw, fx = Math.sin(yaw), fz = Math.cos(yaw), rx = -Math.cos(yaw), rz = Math.sin(yaw);
@@ -770,6 +773,68 @@ function drawRadar() {
   g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 3; g.beginPath(); g.arc(R, R, R - 3, 0, 7); g.stroke();
   g.fillStyle = '#fff'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; const na = view.yaw + Math.PI; g.fillText('N', R + Math.sin(-na) * (R - 12) * -1, R - Math.cos(na) * (R - 12) + 4);
 }
+/* ---------------- full-screen map (tap the MAP button or the minimap, or press M) ---------------- */
+let mapBase = null, mapView = null, mapRAF = 0;
+function buildMapBase() {
+  const W = G.world, k = 4, c = document.createElement('canvas'); c.width = W.W * k; c.height = W.H * k; const g = c.getContext('2d');
+  const img = g.createImageData(W.W, W.H);
+  for (let i = 0; i < W.W * W.H; i++) { const t = W.ground[i]; const col = WATERY.has(t) ? [74, 140, 186] : ROADS.has(t) ? [96, 98, 108] : t === TL.SIDEWALK ? [178, 172, 160] : t === TL.SAND || t === TL.PATH || t === TL.DIRT ? [196, 178, 132] : [104, 150, 84]; img.data.set([...col, 255], i * 4); }
+  const tmp = document.createElement('canvas'); tmp.width = W.W; tmp.height = W.H; tmp.getContext('2d').putImageData(img, 0, 0);
+  g.imageSmoothingEnabled = true; g.drawImage(tmp, 0, 0, c.width, c.height);
+  for (const b of W.buildings) { g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(b.x * k + 2, b.y * k + 2, b.w * k, b.h * k); g.fillStyle = b.interior && !String(b.interior).startsWith('flat') && !String(b.interior).startsWith('office') ? '#e2b04a' : '#cfc8bc'; g.fillRect(b.x * k, b.y * k, b.w * k, b.h * k); g.strokeStyle = 'rgba(60,50,40,.6)'; g.lineWidth = 1; g.strokeRect(b.x * k + 0.5, b.y * k + 0.5, b.w * k - 1, b.h * k - 1); }
+  mapBase = { c, k };
+}
+export function bigMapOpen() { return !document.getElementById('bigmap').classList.contains('hidden'); }
+export function openBigMap() {
+  if (!mapBase) buildMapBase();
+  const el = document.getElementById('bigmap'), cvs = document.getElementById('bigmap-cv'); el.classList.remove('hidden');
+  const W = G.world; const fit = Math.min(innerWidth / W.W, innerHeight / W.H) * 0.95;
+  const p = G.scene.kind === 'world' ? G.me : G.returnPos || G.me;
+  mapView = mapView || { s: fit * 1.6, cx: p.x / 16, cy: p.y / 16 }; mapView.cx = p.x / 16; mapView.cy = p.y / 16; mapView.min = fit;
+  const draw = () => { if (!bigMapOpen()) return; drawBigMap(cvs); mapRAF = requestAnimationFrame(draw); }; cancelAnimationFrame(mapRAF); draw();
+}
+export function closeBigMap() { document.getElementById('bigmap').classList.add('hidden'); cancelAnimationFrame(mapRAF); }
+function drawBigMap(cvs) {
+  const dpr = Math.min(2, devicePixelRatio || 1), w = innerWidth, h = innerHeight; if (cvs.width !== w * dpr) { cvs.width = w * dpr; cvs.height = h * dpr; }
+  const g = cvs.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.fillStyle = '#0d1410'; g.fillRect(0, 0, w, h);
+  const V = mapView, toS = (tx, ty) => [w / 2 + (tx - V.cx) * V.s, h / 2 + (ty - V.cy) * V.s];
+  const [x0, y0] = toS(0, 0); g.imageSmoothingEnabled = V.s < 6; g.drawImage(mapBase.c, x0, y0, G.world.W * V.s, G.world.H * V.s);
+  // place names
+  g.textAlign = 'center'; g.font = `600 ${Math.max(10, Math.min(15, V.s * 2.2))}px sans-serif`;
+  const placed = [];
+  for (const [name, tx, ty] of DESTINATIONS) { const [sx, sy] = toS(tx + 0.5, ty + 0.5); if (sx < -80 || sy < -20 || sx > w + 80 || sy > h + 20) continue; g.fillStyle = '#c0283a'; g.beginPath(); g.arc(sx, sy, 4, 0, 7); g.fill(); const tw = g.measureText(name).width, rc = [sx - tw / 2 - 3, sy - 22, tw + 6, 16]; if (placed.some((q) => rc[0] < q[0] + q[2] && q[0] < rc[0] + rc[2] && rc[1] < q[1] + q[3] && q[1] < rc[1] + rc[3])) continue; placed.push(rc); g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.75)'; g.strokeText(name, sx, sy - 8); g.fillStyle = '#fff'; g.fillText(name, sx, sy - 8); }
+  const mark = (x, y, col, r, label) => { const [sx, sy] = toS(x / 16, y / 16); g.fillStyle = '#000'; g.beginPath(); g.arc(sx, sy, r + 2, 0, 7); g.fill(); g.fillStyle = col; g.beginPath(); g.arc(sx, sy, r, 0, 7); g.fill(); if (label) { g.font = '700 12px sans-serif'; g.lineWidth = 3; g.strokeStyle = '#000'; g.strokeText(label, sx, sy - r - 5); g.fillStyle = col; g.fillText(label, sx, sy - r - 5); } };
+  if (G.waypoint) mark(G.waypoint.x, G.waypoint.y, '#ff4aa0', 7, '◆ ' + (G.waypoint.label || 'Waypoint'));
+  if (G.cab) mark(G.cab.x, G.cab.y, '#ffd94a', 5, 'Cab');
+  for (const c of G.police) mark(c.x, c.y, '#3060ff', 4);
+  if (G.other && G.other.scene === 'world') mark(G.other.x, G.other.y, '#ffd94a', 7, G.otherName || 'Partner');
+  const p = G.scene.kind === 'world' ? G.me : G.returnPos || G.me; const [px, py] = toS(p.x / 16, p.y / 16);
+  g.save(); g.translate(px, py); g.rotate(G.me.angle + Math.PI / 2); g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, -13); g.lineTo(9, 10); g.lineTo(0, 5); g.lineTo(-9, 10); g.closePath(); g.fill(); g.stroke(); g.restore();
+  // compass rose
+  const cx = w - 62, cy = h - 70, R = 40; g.save(); g.translate(cx, cy); g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(0, 0, R + 12, 0, 7); g.fill();
+  for (const [lab, a] of [['N', 0], ['E', Math.PI / 2], ['S', Math.PI], ['W', -Math.PI / 2]]) { g.save(); g.rotate(a); g.fillStyle = lab === 'N' ? '#e33' : '#ddd'; g.beginPath(); g.moveTo(0, -R + 8); g.lineTo(6, 0); g.lineTo(-6, 0); g.closePath(); g.fill(); g.restore(); g.fillStyle = lab === 'N' ? '#ff5a5a' : '#fff'; g.font = '800 14px sans-serif'; g.textAlign = 'center'; g.fillText(lab, Math.sin(a) * (R + 2), -Math.cos(a) * (R + 2) + 5); }
+  g.restore();
+  g.fillStyle = 'rgba(255,255,255,.75)'; g.font = '12px sans-serif'; g.textAlign = 'left'; g.fillText('100 m', 16, h - 22); g.fillRect(16, h - 16, 50 * V.s, 3);
+}
+function setupBigMap() {
+  const el = document.getElementById('bigmap'), cvs = document.getElementById('bigmap-cv');
+  document.getElementById('btn-map').onclick = () => (bigMapOpen() ? closeBigMap() : openBigMap());
+  document.getElementById('radar').onclick = () => openBigMap();
+  document.getElementById('bigmap-close').onclick = () => closeBigMap();
+  const pts = new Map(); let moved = 0, pinch0 = 0, s0 = 0;
+  cvs.addEventListener('pointerdown', (e) => { cvs.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); moved = 0; if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch0 = Math.hypot(a[0] - b[0], a[1] - b[1]); s0 = mapView.s; } });
+  cvs.addEventListener('pointermove', (e) => { const q = pts.get(e.pointerId); if (!q) return; const dx = e.clientX - q[0], dy = e.clientY - q[1]; pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]); mapView.s = clamp(s0 * d / pinch0, mapView.min, 40); moved = 99; return; }
+    moved += Math.abs(dx) + Math.abs(dy); mapView.cx -= dx / mapView.s; mapView.cy -= dy / mapView.s; });
+  cvs.addEventListener('pointerup', (e) => { const q = pts.get(e.pointerId); pts.delete(e.pointerId); if (!q || moved > 8 || pts.size) return;
+    const tx = mapView.cx + (e.clientX - innerWidth / 2) / mapView.s, ty = mapView.cy + (e.clientY - innerHeight / 2) / mapView.s;
+    let best = null, bd = 1e9; for (const [name, x, y] of DESTINATIONS) { const d = Math.hypot(x - tx, y - ty); if (d < bd) { bd = d; best = [name, x, y]; } }
+    if (best && bd * mapView.s < 28) G.waypoint = { x: best[1] * 16 + 8, y: best[2] * 16 + 8, label: best[0] }; else G.waypoint = { x: tx * 16, y: ty * 16, label: 'Waypoint' };
+    UI.toast('Waypoint: ' + G.waypoint.label + ' (follow the pink marker)'); });
+  cvs.addEventListener('pointercancel', (e) => pts.delete(e.pointerId));
+  cvs.addEventListener('wheel', (e) => { e.preventDefault(); mapView.s = clamp(mapView.s * (e.deltaY < 0 ? 1.15 : 0.87), mapView.min, 40); }, { passive: false });
+  void el;
+}
 const _v = { x: 0, y: 0, z: 0 };
 function placeTag(el, ent, text, show) {
   if (!el) return; if (!show) { el.style.display = 'none'; return; }
@@ -832,7 +897,7 @@ export async function startGame({ name, preset, code, online }) {
   SIM.ped = 0.42; SIM.animal = 0.55;
   G.world = buildWorld();
   view = new View(cv, pickQuality());
-  view.setWorld(G.world); buildRadar(); setupLook(); document.getElementById('radar').classList.remove('hidden');
+  view.setWorld(G.world); buildRadar(); setupLook(); setupBigMap(); document.getElementById('radar').classList.remove('hidden'); document.getElementById('btn-map').classList.remove('hidden');
   G.world.spawn = { x: 101 * T + 8, y: 97 * T + 10 };
   initAnimals(); initHelis();
   G.npcs = [];

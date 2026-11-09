@@ -17,6 +17,8 @@
 <body>
   <canvas id="game" class="three"></canvas>
   <canvas id="radar" width="200" height="200" class="hidden"></canvas>
+  <button id="btn-map" class="chip hidden" title="Map (M)">🗺 MAP</button>
+  <div id="bigmap" class="hidden"><canvas id="bigmap-cv"></canvas><div id="bigmap-bar"><b>KOLKATA</b><span>Tap a place to set a waypoint · drag to pan · pinch/scroll to zoom</span><button id="bigmap-close">✕</button></div></div>
   <div id="ptag" class="tag partner"></div><div id="stag" class="tag speech"></div>
 
   <!-- HUD -->
@@ -85,7 +87,8 @@
   <!-- touch controls -->
   <div id="touch" class="hidden">
     <div id="stick"><div id="knob"></div></div>
-    <div id="tbtns"><button data-k="e" class="abtn">A</button><button data-k="f" class="bbtn">B</button><button data-k="space">⚡</button><button data-k="shift">Run</button></div>
+    <div id="tbtns"><button data-k="e" class="abtn">A</button><button data-k="f" class="bbtn">B</button><button data-k="space">⚡</button><button data-k="run" id="runbtn" class="runbtn">🏃<small>RUN</small></button></div>
+    <div id="autorun" class="hidden">🔒 AUTO-RUN</div>
   </div>
 
   <script src="vendor/peerjs.min.js"></script>

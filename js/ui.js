@@ -56,10 +56,16 @@ export function init(game, api) {
 function setupTouch() {
   const stick = $('stick'), knob = $('knob');
   let id = null, cx = 0, cy = 0;
-  stick.addEventListener('pointerdown', (e) => { id = e.pointerId; const r = stick.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; stick.setPointerCapture(id); move(e); });
-  const move = (e) => { if (e.pointerId !== id) return; let dx = e.clientX - cx, dy = e.clientY - cy; const d = Math.hypot(dx, dy), m = 50; if (d > m) { dx *= m / d; dy *= m / d; } const k0 = (stick.clientWidth - knob.offsetWidth) / 2; knob.style.left = k0 + dx + 'px'; knob.style.top = k0 + dy + 'px'; API.touchDir.x = Math.abs(dx) > 12 ? dx / m : 0; API.touchDir.y = Math.abs(dy) > 12 ? dy / m : 0; };
+  // Free Fire / BGMI style: push the stick all the way up and hold briefly to lock auto-run; touch the stick again to cancel
+  let lockT = 0; const setLock = (v) => { API.touchDir.lock = v; $('autorun').classList.toggle('hidden', !v); if (!v) stick.classList.remove('lockzone'); };
+  stick.addEventListener('pointerdown', (e) => { id = e.pointerId; const r = stick.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; stick.setPointerCapture(id); if (API.touchDir.lock) setLock(false); clearTimeout(lockT); lockT = 0; move(e); });
+  const move = (e) => {
+    if (e.pointerId !== id) return; let dx = e.clientX - cx, dy = e.clientY - cy; const d = Math.hypot(dx, dy), m = 50;
+    const inZone = d > m * 1.15 && dy / d < -0.88; if (inZone) { stick.classList.add('lockzone'); if (!lockT) lockT = setTimeout(() => { if (id !== null && !API.touchDir.lock) { setLock(true); if (navigator.vibrate) navigator.vibrate(25); } }, 450); } else { clearTimeout(lockT); lockT = 0; if (!API.touchDir.lock) stick.classList.remove('lockzone'); }
+    if (d > m) { dx *= m / d; dy *= m / d; } const k0 = (stick.clientWidth - knob.offsetWidth) / 2; knob.style.left = k0 + dx + 'px'; knob.style.top = k0 + dy + 'px'; API.touchDir.x = Math.abs(dx) > 12 ? dx / m : 0; API.touchDir.y = Math.abs(dy) > 12 ? dy / m : 0;
+  };
   stick.addEventListener('pointermove', move);
-  const up = (e) => { if (e.pointerId !== id) return; id = null; knob.style.left = ''; knob.style.top = ''; API.touchDir.x = API.touchDir.y = 0; };
+  const up = (e) => { if (e.pointerId !== id) return; id = null; knob.style.left = ''; knob.style.top = ''; API.touchDir.x = API.touchDir.y = 0; clearTimeout(lockT); lockT = 0; if (!API.touchDir.lock) stick.classList.remove('lockzone'); };
   stick.addEventListener('pointerup', up); stick.addEventListener('pointercancel', up);
   document.querySelectorAll('#tbtns button').forEach((b) => {
     b.addEventListener('pointerdown', (e) => { e.preventDefault(); API.virtualKey(b.dataset.k, true); });

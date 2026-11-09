@@ -126,6 +126,9 @@ export class View {
   /* ------------------------------ camera ------------------------------ */
   look(dx, dy) { this.yaw -= dx * 0.004; this.pitch = Math.min(1.2, Math.max(-0.15, this.pitch + dy * 0.003)); this.lastLook = this.t; }
   updateCamera(G, dt) {
+    // sprint camera kick (wider FOV while running), like modern shooters
+    const sprinting = G.me.running && G.me.moving && !G.me.car && !G.me.heli; const fov = sprinting ? 68 : 60;
+    if (Math.abs(this.camera.fov - fov) > 0.05) { this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 5); this.camera.updateProjectionMatrix(); }
     const me = G.me, car = me.car;
     const heli = me.heli; const tx = me.x * M, tz = me.y * M; const ty = heli ? heli.alt + 2.2 : (car ? 1.3 : 1.55) + this.groundY(G.scene, me.x, me.y);
     const want = heli ? 13 : car ? 6.5 : this.inside ? 3.8 : this.dist;
